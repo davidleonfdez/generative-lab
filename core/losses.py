@@ -1,4 +1,5 @@
 from typing import Tuple
+import torch
 from fastai.vision import ifnone
 from core.gen_utils import Probability
 
@@ -23,3 +24,14 @@ def gan_loss_from_func(loss_gen, loss_crit, weights_gen:Tuple[float,float]=None,
 
 def gan_loss_from_func_std(loss_gen, loss_crit, weights_gen:Tuple[float,float]=None):
     return gan_loss_from_func(loss_gen, loss_crit, weights_gen, SingleProbability(1), SingleProbability(0))
+
+
+def hinge_adversarial_losses(margin:float=1.):
+    def _loss_G(fake_pred, output, target):
+        return -(fake_pred.mean())
+
+    def _loss_C(real_pred, fake_pred):
+        zero = torch.tensor([0.], device=real_pred.device)
+        return torch.max(zero, margin - real_pred).mean() + torch.max(zero, margin + fake_pred).mean()
+
+    return _loss_G, _loss_C
