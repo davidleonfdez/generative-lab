@@ -134,7 +134,7 @@ class Probability(ABC):
         pass
 
 
-class SingleProbability(BaseProbability):
+class SingleProbability(Probability):
     def __init__(self, prob_value:float):
         super().__init__()
         self.prob = prob_value
@@ -150,7 +150,7 @@ class SingleProbability(BaseProbability):
         self._prob = val
 
 
-class RandomProbability(BaseProbability):
+class RandomProbability(Probability):
     def __init__(self, min_val=0, max_val=1):
         super().__init__()
         if min_val < 0 or max_val > 1:

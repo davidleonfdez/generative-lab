@@ -1,35 +1,31 @@
+from dataclasses import dataclass
 from functools import partial
 from typing import Callable, Tuple
-from torch import Tensor
+import torch
 import torch.nn as nn
-from fastai.vision import (add_metrics, Callback, DataBunch, flatten_model, ifnone, Learner, LearnerCallback, NoopLoss,
-                           OptimWrapper, requires_grad, SmoothenValue, WassersteinLoss)
-from fastai.vision.gan import FixedGANSwitcher, GANModule
+from fastai.vision import (add_metrics, Callback, DataBunch, flatten_model, ifnone, Learner, LearnerCallback, LossFunction,
+                           NoopLoss, OptimWrapper, requires_grad, SmoothenValue, WassersteinLoss)
+from fastai.vision.gan import FixedGANSwitcher, GANModule, GANTrainer
+from core.losses import gan_loss_from_func, gan_loss_from_func_std
 
 
-def get_gan_opts_state_dict(learner) -> dict:
-    return {
-        'opt_gen': learner.gan_trainer.opt_gen.get_state(),
-        'opt_critic': learner.gan_trainer.opt_critic.get_state()
-    }
+@dataclass
+class GANLossArgs:
+    gen_loss_func:LossFunction
+    crit_loss_func:LossFunction
 
 
-def load_gan_opts_from_state_dict(learner, state:dict):
-    layer_groups_gen = [nn.Sequential(*flatten_model(learner.model.generator))]      
-    layer_groups_critic = [nn.Sequential(*flatten_model(learner.model.critic))]
-    learner.gan_trainer.opt_gen = OptimWrapper.load_with_state_and_layer_group(
-        state['opt_gen'],
-        layer_groups_gen)
-    learner.gan_trainer.opt_critic = OptimWrapper.load_with_state_and_layer_group(
-        state['opt_critic'],
-        layer_groups_critic)
+@dataclass
+class GANGPLossArgs(GANLossArgs):
+    real_provider:Callable[[bool], torch.Tensor]
+    plambda:float=10.
 
 
-class GANGPLoss(GANModule):
+class CustomGANLoss(GANModule):
     "Wrapper around `loss_funcC` (for the critic) and `loss_funcG` (for the generator). Adds a gradient penalty for the critic."
-    def __init__(self, loss_funcG:Callable, loss_funcC:Callable, gan_model:GANModule, real_provider:Callable[[bool], Tensor], plambda:float):
+    def __init__(self, loss_wrapper_args:GANLossArgs, gan_model:GANModule):
         super().__init__()
-        self.loss_funcG,self.loss_funcC,self.gan_model,self.real_provider,self.plambda = loss_funcG,loss_funcC,gan_model,real_provider,plambda
+        self.loss_funcG,self.loss_funcC,self.gan_model = loss_wrapper_args.gen_loss_func,loss_wrapper_args.crit_loss_func,gan_model
 
     def generator(self, output, target):
         "Evaluate the `output` with the critic then uses `self.loss_funcG` to combine it with `target`."
@@ -38,8 +34,19 @@ class GANGPLoss(GANModule):
 
     def critic(self, real_pred, input):
         "Create some `fake_pred` with the generator from `input` and compare them to `real_pred` in `self.loss_funcD`."
-        # print(inspect.stack())
-        # traceback.print_stack()
+        fake = self.gan_model.generator(input.requires_grad_(False)).requires_grad_(True)
+        fake_pred = self.gan_model.critic(fake)
+        return self.loss_funcC(real_pred, fake_pred)
+
+
+class GANGPLoss(CustomGANLoss):
+    "Wrapper around `loss_funcC` (for the critic) and `loss_funcG` (for the generator). Adds a gradient penalty for the critic."
+    def __init__(self, loss_wrapper_args:GANGPLossArgs, gan_model:GANModule):
+        super().__init__(loss_wrapper_args, gan_model)
+        self.real_provider,self.plambda = loss_wrapper_args.real_provider,loss_wrapper_args.plambda
+
+    def critic(self, real_pred, input):
+        "Create some `fake_pred` with the generator from `input` and compare them to `real_pred` in `self.loss_funcD`."
 
         real = self.real_provider(self.gen_mode)
 
@@ -60,91 +67,21 @@ class GANGPLoss(GANModule):
         return self.plambda * ((grads.norm() - 1)**2)
 
 
-class CustomGANTrainer(LearnerCallback):
+class CustomGANTrainer(GANTrainer):
     "Handles GAN Training."
     _order=-20
     def __init__(self, learn:Learner, switch_eval:bool=False, clip:float=None, beta:float=0.98, gen_first:bool=False,
                  show_img:bool=True):
-        super().__init__(learn)
-        self.switch_eval,self.clip,self.beta,self.gen_first,self.show_img = switch_eval,clip,beta,gen_first,show_img
-        self.generator,self.critic = self.model.generator,self.model.critic
-
-    def _set_trainable(self):
-        train_model = self.generator if     self.gen_mode else self.critic
-        loss_model  = self.generator if not self.gen_mode else self.critic
-        requires_grad(train_model, True)
-        requires_grad(loss_model, False)
-        if self.switch_eval:
-            train_model.train()
-            loss_model.eval()
-
-    def on_train_begin(self, **kwargs):
-        "Create the optimizers for the generator and critic if necessary, initialize smootheners."
-        if not getattr(self,'opt_gen',None):
-            self.opt_gen = self.opt.new([nn.Sequential(*flatten_model(self.generator))])
-        else: self.opt_gen.lr,self.opt_gen.wd = self.opt.lr,self.opt.wd
-        if not getattr(self,'opt_critic',None):
-            self.opt_critic = self.opt.new([nn.Sequential(*flatten_model(self.critic))])
-        else: self.opt_critic.lr,self.opt_critic.wd = self.opt.lr,self.opt.wd
-        self.gen_mode = self.gen_first
-        self.switch(self.gen_mode)
-        self.closses,self.glosses = [],[]
-        self.smoothenerG,self.smoothenerC = SmoothenValue(self.beta),SmoothenValue(self.beta)
-        #self.recorder.no_val=True
-        self.recorder.add_metric_names(['gen_loss', 'disc_loss'])
-        self.imgs,self.titles = [],[]
-
-    def on_train_end(self, **kwargs):
-        "Switch in generator mode for showing results."
-        self.switch(gen_mode=True)
+        #TODO: there's logic duplication in the default values of the kw params.
+        # Alternatives:
+        # -pass **kwargs to super init: not great, less explicit, hides params from IDE and docs
+        # -"delegates" attribute advised by fastai: pending review
+        super().__init__(learn, switch_eval=switch_eval, clip=clip, beta=beta, gen_first=gen_first, show_img=show_img)
 
     def on_batch_begin(self, last_input, last_target, **kwargs):
         "Clamp the weights with `self.clip` if it's not None, return the correct input."
-        if self.clip is not None:
-            for p in self.critic.parameters(): p.data.clamp_(-self.clip, self.clip)
         self.last_real = last_target if not self.gen_mode else None
-        if last_input.dtype == torch.float16: last_target = to_half(last_target)
-        return {'last_input':last_input,'last_target':last_target} if self.gen_mode else {'last_input':last_target,'last_target':last_input}
-
-    def on_backward_begin(self, last_loss, last_output, **kwargs):
-        "Record `last_loss` in the proper list."
-        last_loss = last_loss.float().detach().cpu()
-        if self.gen_mode:
-            self.smoothenerG.add_value(last_loss)
-            self.glosses.append(self.smoothenerG.smooth)
-            self.last_gen = last_output.detach().cpu()
-        else:
-            self.smoothenerC.add_value(last_loss)
-            self.closses.append(self.smoothenerC.smooth)
-    
-    def on_batch_end(self, **kwargs):
-        self.opt_critic.zero_grad()
-        self.opt_gen.zero_grad()
-    
-    def on_epoch_begin(self, epoch, **kwargs):
-        "Put the critic or the generator back to eval if necessary."
-        self.switch(self.gen_mode)
-
-    def on_epoch_end(self, pbar, epoch, last_metrics, **kwargs):
-        "Put the various losses in the recorder and show a sample image."
-        if not hasattr(self, 'last_gen') or not self.show_img: return
-        data = self.learn.data
-        img = self.last_gen[0]
-        norm = getattr(data,'norm',False)
-        if norm and norm.keywords.get('do_y',False): img = data.denorm(img)
-        img = data.train_ds.y.reconstruct(img)
-        self.imgs.append(img)
-        self.titles.append(f'Epoch {epoch}')
-        pbar.show_imgs(self.imgs, self.titles)
-        return add_metrics(last_metrics, [getattr(self.smoothenerG,'smooth',None),getattr(self.smoothenerC,'smooth',None)])
-
-    def switch(self, gen_mode:bool=None):
-        "Switch the model, if `gen_mode` is provided, in the desired mode."
-        self.gen_mode = (not self.gen_mode) if gen_mode is None else gen_mode
-        self.opt.opt = self.opt_gen.opt if self.gen_mode else self.opt_critic.opt
-        self._set_trainable()
-        self.model.switch(gen_mode)
-        self.loss_func.switch(gen_mode)
+        return super().on_batch_begin(last_input, last_target, **kwargs)
 
     def load_opts_from_state_dict(self, state:dict):
         layer_groups_gen = [nn.Sequential(*flatten_model(self.generator))]      
@@ -163,31 +100,56 @@ class CustomGANTrainer(LearnerCallback):
         }
 
 
-class GANGPLearner(Learner):
+class CustomGANLearner(Learner):
     "A `Learner` suitable for GANs that uses gradient penalty to enforce Lipschitz constraint."
-    def __init__(self, data:DataBunch, generator:nn.Module, critic:nn.Module, gen_loss_func:LossFunction,
-                 crit_loss_func:LossFunction, switcher:Callback=None, gen_first:bool=False, switch_eval:bool=True,
-                 show_img:bool=True, clip:float=None, plambda:float=10.0, **learn_kwargs):
+    def __init__(self, data:DataBunch, generator:nn.Module, critic:nn.Module, gan_loss_args:GANLossArgs,
+                 switcher:Callback=None, gen_first:bool=False, switch_eval:bool=True,
+                 show_img:bool=True, clip:float=None, **learn_kwargs):
         gan = GANModule(generator, critic)
-        real_provider = lambda gen_mode: self.gan_trainer.last_real if not gen_mode else None
-        loss_func = GANGPLoss(gen_loss_func, crit_loss_func, gan, real_provider, plambda)
+        loss_func = self._create_loss_wrapper(gan_loss_args, gan)
         switcher = ifnone(switcher, partial(FixedGANSwitcher, n_crit=5, n_gen=1))
         super().__init__(data, gan, loss_func=loss_func, callback_fns=[switcher], **learn_kwargs)
         trainer = CustomGANTrainer(self, clip=clip, switch_eval=switch_eval, show_img=show_img)
         self.gan_trainer = trainer
         self.callbacks.append(trainer)
 
+    def _create_loss_wrapper(self, loss_wrapper_args:GANLossArgs, gan:GANModule) -> CustomGANLoss:
+        return CustomGANLoss(loss_wrapper_args, gan)
+
     @classmethod
     def from_learners(cls, learn_gen:Learner, learn_crit:Learner, switcher:Callback=None,
                       weights_gen:Tuple[float,float]=None, **learn_kwargs):
         "Create a GAN from `learn_gen` and `learn_crit`."
-        losses = gan_loss_from_func(learn_gen.loss_func, learn_crit.loss_func, weights_gen=weights_gen)
+        losses = gan_loss_from_func_std(learn_gen.loss_func, learn_crit.loss_func, weights_gen=weights_gen)
         return cls(learn_gen.data, learn_gen.model, learn_crit.model, *losses, switcher=switcher, **learn_kwargs)
 
     @classmethod
-    def wgan(cls, data:DataBunch, generator:nn.Module, critic:nn.Module, switcher:Callback=None, **learn_kwargs):
+    def wgan(cls, data:DataBunch, generator:nn.Module, critic:nn.Module, switcher:Callback=None, clip:float=0.01, 
+             **learn_kwargs):
         "Create a WGAN from `data`, `generator` and `critic`."
-        return cls(data, generator, critic, NoopLoss(), WassersteinLoss(), switcher=switcher, **learn_kwargs)
+        return cls(data, generator, critic, GANLossArgs(NoopLoss(), WassersteinLoss()), switcher=switcher, 
+                   clip=clip, **learn_kwargs)
+
+
+class GANGPLearner(CustomGANLearner):
+    "A `Learner` suitable for GANs that uses gradient penalty to enforce Lipschitz constraint."
+    def __init__(self, data:DataBunch, generator:nn.Module, critic:nn.Module, gan_loss_args:GANLossArgs,
+                 switcher:Callback=None, gen_first:bool=False, switch_eval:bool=True, show_img:bool=True,
+                 clip:float=None, plambda:float=10.0, **learn_kwargs):
+        real_provider = lambda gen_mode: self.gan_trainer.last_real if not gen_mode else None        
+        gan_loss_args = GANGPLossArgs(gan_loss_args.gen_loss_func, gan_loss_args.crit_loss_func, real_provider, plambda)
+        super().__init__(data, generator, critic, gan_loss_args, switcher, gen_first, switch_eval, show_img, 
+                         clip, **learn_kwargs)
+
+    def _create_loss_wrapper(self, loss_wrapper_args:GANLossArgs, gan:GANModule) -> CustomGANLoss:
+        return GANGPLoss(loss_wrapper_args, gan)
+
+    @classmethod
+    def wgan(cls, data:DataBunch, generator:nn.Module, critic:nn.Module, switcher:Callback=None, clip:float=None, 
+             **learn_kwargs):
+        "Create a WGAN-GP from `data`, `generator` and `critic`."
+        return cls(data, generator, critic, GANLossArgs(NoopLoss(), WassersteinLoss()), switcher=switcher, 
+                   clip=clip, **learn_kwargs)
 
 
 def save_gan_learner(learner, path):
@@ -206,7 +168,7 @@ def load_gan_learner(learner, path):
 
 
 def train_checkpoint_gan(learner:Learner, n_epochs:int, initial_epoch:int, filename_start:str, 
-                     lr:float=2e-4, n_epochs_save_split=50, show_image:bool=False):
+                         lr:float=2e-4, n_epochs_save_split=50, show_image:bool=False):
     # Relative epoch, without adding initial_epoch
     rel_epoch=0
     learner.gan_trainer.show_img=show_image

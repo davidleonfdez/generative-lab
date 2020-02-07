@@ -1,7 +1,7 @@
 from typing import Tuple
 import torch
 from fastai.vision import ifnone
-from core.gen_utils import Probability
+from core.gen_utils import Probability, SingleProbability
 
 
 def gan_loss_from_func(loss_gen, loss_crit, weights_gen:Tuple[float,float]=None,
@@ -15,7 +15,7 @@ def gan_loss_from_func(loss_gen, loss_crit, weights_gen:Tuple[float,float]=None,
 
     def _loss_C(real_pred, fake_pred):
         ones = fake_pred.new_full((fake_pred.shape[0],), real_label_crit.prob)
-        zeros = fake_pred.new_full(fake_pred.shape[0],), fake_label_crit.prob)
+        zeros = fake_pred.new_full((fake_pred.shape[0],), fake_label_crit.prob)
         result = (loss_crit(real_pred, ones) + loss_crit(fake_pred, zeros)) / 2
         return result
 
