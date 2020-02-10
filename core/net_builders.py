@@ -1,11 +1,11 @@
 from typing import Optional
 import torch.nn as nn
-from fastai.vision import conv_layer, conv2d, conv2d_trans, res_block, NormType
+from fastai.vision import conv_layer, conv2d, conv2d_trans, NormType, res_block
 from core.layers import AvgFlatten, upsample_layer
 
 
 def custom_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers:int=0,
-                  self_attention:bool=False, **conv_kwargs):
+                  self_attention:bool=False, **conv_kwargs) -> nn.Module:
     """A basic critic for images `n_channels` x `in_size` x `in_size`.
     
     It's a copy of fastai basic_critic that allows us to pass norm_type as a parameter for conv_layer.
@@ -14,7 +14,8 @@ def custom_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers
     layers = [conv_layer(n_channels, n_features, 4, 2, 1, leaky=0.2, norm_type=None, 
                          self_attention = self_attention, **first_layer_kwargs)]
     cur_size, cur_ftrs = in_size//2, n_features
-    layers.append(nn.Sequential(*[conv_layer(cur_ftrs, cur_ftrs, 3, 1, leaky=0.2, **conv_kwargs) for _ in range(n_extra_layers)]))
+    layers.append(nn.Sequential(*[conv_layer(cur_ftrs, cur_ftrs, 3, 1, leaky=0.2, **conv_kwargs) 
+                                  for _ in range(n_extra_layers)]))
     while cur_size > 4:
         layers.append(conv_layer(cur_ftrs, cur_ftrs*2, 4, 2, 1, leaky=0.2, **conv_kwargs))
         cur_ftrs *= 2 ; cur_size //= 2
@@ -22,8 +23,8 @@ def custom_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers
     return nn.Sequential(*layers)
 
 
-def interpolation_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features:int=64, n_extra_layers=0, 
-                            dense:bool=False, upsample_mode='bilinear', **conv_kwargs):
+def interpolation_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features:int=64, n_extra_layers:int=0,
+                            dense:bool=False, upsample_mode:str='bilinear', **conv_kwargs) -> nn.Module:
     "A generator (from `noise_sz` to images `n_channels` x `in_size` x `in_size`) that uses interpolation to upsample."
     cur_size, cur_ftrs = 4, n_features//2
     while cur_size < in_size:  cur_size *= 2; cur_ftrs *= 2
@@ -41,7 +42,8 @@ def interpolation_generator(in_size:int, n_channels:int, noise_sz:int=100, n_fea
     return nn.Sequential(*layers)
 
 
-def pseudo_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features:int=64, n_extra_layers=0, dense:bool=False, **conv_kwargs):
+def pseudo_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features:int=64, n_extra_layers:int=0, 
+                         dense:bool=False, **conv_kwargs) -> nn.Module:
     "A resnetish generator from `noise_sz` to images `n_channels` x `in_size` x `in_size`."
     cur_size, cur_ftrs = 4, n_features//2
     while cur_size < in_size:  cur_size *= 2; cur_ftrs *= 2
@@ -59,7 +61,7 @@ def pseudo_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_featur
 
 
 def simple_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features:int=64, n_extra_layers:int=0,
-                         n_extra_convs_by_block:int=1, upsample_first:bool=True, **conv_kwargs):
+                         n_extra_convs_by_block:int=1, upsample_first:bool=True, **conv_kwargs) -> nn.Module:
     "A resnetish generator from `noise_sz` to images `n_channels` x `in_size` x `in_size`."
     cur_size, cur_ftrs = 4, n_features//2
     while cur_size < in_size:  cur_size *= 2; cur_ftrs *= 2
@@ -75,11 +77,11 @@ def simple_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_featur
     return nn.Sequential(*layers)
 
 
-def deep_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features:int=64, n_extra_blocks_begin=0, 
-                       n_extra_blocks_end=0, n_blocks_between_upblocks=0, n_extra_convs_by_upblock:int=1, 
+def deep_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features:int=64, n_extra_blocks_begin:int=0, 
+                       n_extra_blocks_end:int=0, n_blocks_between_upblocks:int=0, n_extra_convs_by_upblock:int=1, 
                        upsample_first_in_block:bool=True, dense:bool=False, use_final_activ_res_blocks:bool=False,
                        use_final_bn:bool=False, use_shortcut_activ:bool=False, use_shortcut_bn:bool=True,
-                       norm_type_inner:Optional[NormType]=NormType.Batch, **conv_kwargs):
+                       norm_type_inner:Optional[NormType]=NormType.Batch, **conv_kwargs) -> nn.Module:
     "A resnetish generator from `noise_sz` to images `n_channels` x `in_size` x `in_size`."
     cur_size, cur_ftrs = 4, n_features//2
     while cur_size < in_size:  cur_size *= 2; cur_ftrs *= 2
@@ -107,12 +109,14 @@ def deep_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features
     return nn.Sequential(*layers)
 
 
-def pseudo_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers:int=0, dense:bool=False, **conv_kwargs):
+def pseudo_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers:int=0, dense:bool=False, 
+                      **conv_kwargs) -> nn.Module:
     "A resnet-ish critic for images `n_channels` x `in_size` x `in_size`."
     leaky = 0.2
-    layers = [conv_layer(n_channels, n_features, 4, 2, 1, leaky=0.2, norm_type=None, **conv_kwargs)]#norm_type=None?
+    layers = [conv_layer(n_channels, n_features, 4, 2, 1, leaky=0.2, norm_type=None, **conv_kwargs)]
     cur_size, cur_ftrs = in_size//2, n_features
-    layers.append(nn.Sequential(*[conv_layer(cur_ftrs, cur_ftrs, 3, 1, leaky=leaky, **conv_kwargs) for _ in range(n_extra_layers)]))
+    layers.append(nn.Sequential(*[conv_layer(cur_ftrs, cur_ftrs, 3, 1, leaky=leaky, **conv_kwargs) 
+                                  for _ in range(n_extra_layers)]))
     while cur_size > 4:
         layers.append(conv_layer(cur_ftrs, cur_ftrs*2, 4, 2, 1, leaky=leaky, **conv_kwargs))
         cur_ftrs *= 2; cur_size //= 2
@@ -123,9 +127,11 @@ def pseudo_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_la
     return nn.Sequential(*layers)
 
 
-def simple_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers:int=0, n_extra_convs_by_block=1, downsample_first:bool=True, **conv_kwargs):
+def simple_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers:int=0, 
+                      n_extra_convs_by_block:int=1, downsample_first:bool=True, 
+                      **conv_kwargs) -> nn.Module:
     "A resnet-ish critic for images `n_channels` x `in_size` x `in_size`."
-    layers = [conv_layer(n_channels, n_features, 4, 2, 1, leaky=0.2, norm_type=None, **conv_kwargs)]#norm_type=None?
+    layers = [conv_layer(n_channels, n_features, 4, 2, 1, leaky=0.2, norm_type=None, **conv_kwargs)]
     cur_size, cur_ftrs = in_size//2, n_features
     layers.append(nn.Sequential(*[conv_layer(cur_ftrs, cur_ftrs, 3, 1, leaky=0.2, **conv_kwargs) for _ in range(n_extra_layers)]))
     while cur_size > 4:
@@ -136,17 +142,18 @@ def simple_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_la
     return nn.Sequential(*layers)
 
 
-def deep_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_blocks_begin:int=0, n_extra_blocks_end=0,
-                    n_blocks_between_downblocks:int=0, n_extra_convs_by_downblock:int=1, downsample_first_in_block:bool=True,
-                    dense:bool=False, use_final_activ_res_blocks:bool=False, use_final_bn:bool=False,
-                    use_shortcut_activ:bool=False, use_shortcut_bn:bool=True, norm_type_inner:Optional[NormType]=NormType.Batch,
-                    **conv_kwargs):
+def deep_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_blocks_begin:int=0, 
+                    n_extra_blocks_end:int=0, n_blocks_between_downblocks:int=0, n_extra_convs_by_downblock:int=1, 
+                    downsample_first_in_block:bool=True, dense:bool=False, use_final_activ_res_blocks:bool=False, 
+                    use_final_bn:bool=False, use_shortcut_activ:bool=False, use_shortcut_bn:bool=True, 
+                    norm_type_inner:Optional[NormType]=NormType.Batch, **conv_kwargs) -> nn.Module:
     "A resnet-ish critic for images `n_channels` x `in_size` x `in_size`."
     leaky = 0.2
     layers = [conv_layer(n_channels, n_features, 4, 2, 1, leaky=leaky, norm_type=None, **conv_kwargs)]
     cur_size, cur_ftrs = in_size//2, n_features
-    layers.append(nn.Sequential(*[res_block_std(cur_ftrs, dense=dense, leaky=leaky, use_final_activ=use_final_activ_res_blocks, 
-                                                use_final_bn=use_final_bn, norm_type_inner=norm_type_inner) 
+    layers.append(nn.Sequential(*[res_block_std(cur_ftrs, dense=dense, leaky=leaky, 
+                                                use_final_activ=use_final_activ_res_blocks, 
+                                                use_final_bn=use_final_bn, norm_type_inner=norm_type_inner)
                                   for _ in range(n_extra_blocks_begin)]))
     
     while cur_size > 4:

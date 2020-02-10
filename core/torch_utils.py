@@ -1,14 +1,14 @@
-from typing import Callable
+from typing import Callable, Union
 import torch.nn as nn
 from fastai.core import is_listy
 from fastai.torch_core import requires_grad
 
 
-def get_relu(leaky:float=None):
+def get_relu(leaky:float=None) -> Union[nn.ReLU, nn.LeakyReLU]:
     return nn.ReLU() if leaky is None else nn.LeakyReLU(leaky)
 
 
-def freeze_layers_if_condition(model:nn.Module, condition:Callable):
+def freeze_layers_if_condition(model:nn.Module, condition:Callable[[nn.Module], bool]):
     for module in model.modules():
         #if condition(module): module.eval()
         if condition(module): requires_grad(module, False)

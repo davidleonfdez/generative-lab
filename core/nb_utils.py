@@ -1,5 +1,7 @@
-def mount_gdrive():
-    """ Mount Google Drive storage of the current Google account and return the root path.
+import importlib
+
+def mount_gdrive() -> str:
+    """Mount Google Drive storage of the current Google account and return the root path.
 
     Functionality only available in Google Colab Enviroment; otherwise, it raises a RuntimeError.
     """

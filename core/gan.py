@@ -1,11 +1,12 @@
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple, Union
 import torch
 import torch.nn as nn
-from fastai.vision import (add_metrics, Callback, DataBunch, flatten_model, ifnone, Learner, LearnerCallback, LossFunction,
-                           NoopLoss, OptimWrapper, requires_grad, SmoothenValue, WassersteinLoss)
-from fastai.vision.gan import FixedGANSwitcher, GANModule, GANTrainer
+from fastai.vision import (add_metrics, Callback, DataBunch, flatten_model, ifnone, Learner, LearnerCallback, 
+                           LossFunction, NoopLoss, OptimWrapper, PathOrStr, requires_grad, SmoothenValue, 
+                           WassersteinLoss)
+from fastai.vision.gan import FixedGANSwitcher, GANLearner, GANModule, GANTrainer
 from core.losses import gan_loss_from_func, gan_loss_from_func_std
 
 
@@ -70,8 +71,8 @@ class GANGPLoss(CustomGANLoss):
 class CustomGANTrainer(GANTrainer):
     "Handles GAN Training."
     _order=-20
-    def __init__(self, learn:Learner, switch_eval:bool=False, clip:float=None, beta:float=0.98, gen_first:bool=False,
-                 show_img:bool=True):
+    def __init__(self, learn:Learner, switch_eval:bool=False, clip:Optional[float]=None, beta:float=0.98, 
+                 gen_first:bool=False, show_img:bool=True):
         #TODO: there's logic duplication in the default values of the kw params.
         # Alternatives:
         # -pass **kwargs to super init: not great, less explicit, hides params from IDE and docs
@@ -103,8 +104,8 @@ class CustomGANTrainer(GANTrainer):
 class CustomGANLearner(Learner):
     "A `Learner` suitable for GANs that uses gradient penalty to enforce Lipschitz constraint."
     def __init__(self, data:DataBunch, generator:nn.Module, critic:nn.Module, gan_loss_args:GANLossArgs,
-                 switcher:Callback=None, gen_first:bool=False, switch_eval:bool=True,
-                 show_img:bool=True, clip:float=None, **learn_kwargs):
+                 switcher:Optional[Callback]=None, gen_first:bool=False, switch_eval:bool=True,
+                 show_img:bool=True, clip:Optional[float]=None, **learn_kwargs):
         gan = GANModule(generator, critic)
         loss_func = self._create_loss_wrapper(gan_loss_args, gan)
         switcher = ifnone(switcher, partial(FixedGANSwitcher, n_crit=5, n_gen=1))
@@ -117,15 +118,15 @@ class CustomGANLearner(Learner):
         return CustomGANLoss(loss_wrapper_args, gan)
 
     @classmethod
-    def from_learners(cls, learn_gen:Learner, learn_crit:Learner, switcher:Callback=None,
-                      weights_gen:Tuple[float,float]=None, **learn_kwargs):
+    def from_learners(cls, learn_gen:Learner, learn_crit:Learner, switcher:Optional[Callback]=None,
+                      weights_gen:Optional[Tuple[float,float]]=None, **learn_kwargs):
         "Create a GAN from `learn_gen` and `learn_crit`."
         losses = gan_loss_from_func_std(learn_gen.loss_func, learn_crit.loss_func, weights_gen=weights_gen)
         return cls(learn_gen.data, learn_gen.model, learn_crit.model, *losses, switcher=switcher, **learn_kwargs)
 
     @classmethod
-    def wgan(cls, data:DataBunch, generator:nn.Module, critic:nn.Module, switcher:Callback=None, clip:float=0.01, 
-             **learn_kwargs):
+    def wgan(cls, data:DataBunch, generator:nn.Module, critic:nn.Module, switcher:Optional[Callback]=None, 
+             clip:float=0.01, **learn_kwargs):
         "Create a WGAN from `data`, `generator` and `critic`."
         return cls(data, generator, critic, GANLossArgs(NoopLoss(), WassersteinLoss()), switcher=switcher, 
                    clip=clip, **learn_kwargs)
@@ -134,41 +135,41 @@ class CustomGANLearner(Learner):
 class GANGPLearner(CustomGANLearner):
     "A `Learner` suitable for GANs that uses gradient penalty to enforce Lipschitz constraint."
     def __init__(self, data:DataBunch, generator:nn.Module, critic:nn.Module, gan_loss_args:GANLossArgs,
-                 switcher:Callback=None, gen_first:bool=False, switch_eval:bool=True, show_img:bool=True,
-                 clip:float=None, plambda:float=10.0, **learn_kwargs):
+                 switcher:Optional[Callback]=None, gen_first:bool=False, switch_eval:bool=True, show_img:bool=True,
+                 clip:Optional[float]=None, plambda:float=10.0, **learn_kwargs):
         real_provider = lambda gen_mode: self.gan_trainer.last_real if not gen_mode else None        
-        gan_loss_args = GANGPLossArgs(gan_loss_args.gen_loss_func, gan_loss_args.crit_loss_func, real_provider, plambda)
-        super().__init__(data, generator, critic, gan_loss_args, switcher, gen_first, switch_eval, show_img, 
+        gangp_loss_args = GANGPLossArgs(gan_loss_args.gen_loss_func, gan_loss_args.crit_loss_func, real_provider, plambda)
+        super().__init__(data, generator, critic, gangp_loss_args, switcher, gen_first, switch_eval, show_img, 
                          clip, **learn_kwargs)
 
     def _create_loss_wrapper(self, loss_wrapper_args:GANLossArgs, gan:GANModule) -> CustomGANLoss:
         return GANGPLoss(loss_wrapper_args, gan)
 
     @classmethod
-    def wgan(cls, data:DataBunch, generator:nn.Module, critic:nn.Module, switcher:Callback=None, clip:float=None, 
-             **learn_kwargs):
+    def wgan(cls, data:DataBunch, generator:nn.Module, critic:nn.Module, switcher:Optional[Callback]=None, 
+             clip:Optional[float]=None, **learn_kwargs):
         "Create a WGAN-GP from `data`, `generator` and `critic`."
         return cls(data, generator, critic, GANLossArgs(NoopLoss(), WassersteinLoss()), switcher=switcher, 
                    clip=clip, **learn_kwargs)
 
 
-def save_gan_learner(learner, path):
+def save_gan_learner(learner:CustomGANLearner, path:PathOrStr):
     torch.save({
         'critic': learner.model.critic.state_dict(),
         'generator': learner.model.generator.state_dict(),
-        'opt': get_gan_opts_state_dict(learner)
+        'opt': learner.gan_trainer.get_opts_state_dict()
     }, path)
     
     
-def load_gan_learner(learner, path):
+def load_gan_learner(learner:CustomGANLearner, path:PathOrStr):
     state_dict = torch.load(path)
     learner.model.critic.load_state_dict(state_dict['critic'])
     learner.model.generator.load_state_dict(state_dict['generator'])
-    load_gan_opts_from_state_dict(learner, state_dict['opt'])
+    learner.gan_trainer.load_opts_from_state_dict(state_dict['opt'])
 
 
 def train_checkpoint_gan(learner:Learner, n_epochs:int, initial_epoch:int, filename_start:str, 
-                         lr:float=2e-4, n_epochs_save_split=50, show_image:bool=False):
+                         lr:float=2e-4, n_epochs_save_split:int=50, show_image:bool=False):
     # Relative epoch, without adding initial_epoch
     rel_epoch=0
     learner.gan_trainer.show_img=show_image

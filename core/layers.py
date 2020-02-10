@@ -1,11 +1,11 @@
-from typing import Optional, Callable
+from typing import Callable, Optional
 import torch.nn as nn
-from fastai.vision import (Lambda, NormType, weight_norm, spectral_norm, SelfAttention, relu, init_default,
-                            conv_layer, MergeLayer, SequentialEx)
+from fastai.vision import (conv_layer, init_default, Lambda, MergeLayer, NormType, relu, SelfAttention, 
+                           SequentialEx, spectral_norm, weight_norm)
 from core.torch_utils import get_relu
 
 
-def AvgFlatten():
+def AvgFlatten() -> nn.Module:
     "Takes the average of the input."
     return Lambda(lambda x: x.mean(0).view(1))
 
@@ -13,7 +13,7 @@ def AvgFlatten():
 def upsample_layer(ni:int, nf:int, scale_factor=2, upsample_mode='bilinear', ks:int=3, stride:int=1, 
                padding:int=1, bias:Optional[bool]=None, norm_type:Optional[NormType]=NormType.Batch, 
                use_activ:bool=True, leaky:Optional[float]=None, init:Callable=nn.init.kaiming_normal_, 
-               self_attention:bool=False):
+               self_attention:bool=False) -> nn.Module:
     "Create a sequence of upsample by interpolation, conv (`ni` to `nf`), ReLU (if `use_activ`) and BN (if `bn`) layers."
     bn = norm_type in (NormType.Batch, NormType.BatchZero)
     if bias is None: bias = not bn
@@ -30,7 +30,8 @@ def upsample_layer(ni:int, nf:int, scale_factor=2, upsample_mode='bilinear', ks:
 
 
 def res_block_std(nf, dense:bool=False, norm_type_inner:Optional[NormType]=NormType.Batch, bottle:bool=False, 
-                  leaky:Optional[float]=None, use_final_activ:bool=False, use_final_bn:bool=False, **conv_kwargs):
+                  leaky:Optional[float]=None, use_final_activ:bool=False, use_final_bn:bool=False, 
+                  **conv_kwargs) -> nn.Module:
     """Resnet block of `nf` features. `conv_kwargs` are passed to `conv_layer`.
     
     Copied from fastai/layers.py and modified to add a `leaky` parameter.
@@ -54,14 +55,16 @@ class MergeResampleLayer(nn.Module):
     Uses a 1x1 conv + BatchNorm to perform a simple up/downsample of the input before the addition.
     upsample = True => performs upsample; upsample = False => performs downsample.
     """
-    def __init__(self, in_ftrs, out_ftrs, stride=2, upsample:bool=False, leaky:Optional[float]=None,
+    def __init__(self, in_ftrs:int, out_ftrs:int, stride:int=2, upsample:bool=False, leaky:Optional[float]=None,
                  use_activ:bool=False, use_bn:bool=True):
         super().__init__()
         # We can't use fastai's conv_layer() here because we need to pass output_padding to ConvTranspose2d
         conv_func = nn.ConvTranspose2d if upsample else nn.Conv2d
         conv_kwargs = {"output_padding": 1} if upsample else {}
         init = nn.init.kaiming_normal_
-        conv = init_default(conv_func(in_ftrs, out_ftrs, kernel_size=1, stride=stride, bias=False, padding=0, **conv_kwargs), init)
+        conv = init_default(conv_func(in_ftrs, out_ftrs, kernel_size=1, stride=stride, 
+                                      bias=False, padding=0, **conv_kwargs), 
+                            init)
         layers = [conv]
         if use_activ: layers.append(get_relu(leaky))
         if use_bn: layers.append(nn.BatchNorm2d(out_ftrs))
@@ -72,9 +75,10 @@ class MergeResampleLayer(nn.Module):
         return x + identity
 
 
-def res_resample_block(in_ftrs, out_ftrs, n_extra_convs=1, resample_first:bool=True, upsample:bool=False, 
-                       leaky:float=None, use_final_bn:bool=False, use_shortcut_activ:bool=False,
-                       use_shortcut_bn:bool=True, norm_type_inner:Optional[NormType]=NormType.Batch, **conv_kwargs):
+def res_resample_block(in_ftrs:int, out_ftrs:int, n_extra_convs:int=1, resample_first:bool=True, upsample:bool=False, 
+                       leaky:Optional[float]=None, use_final_bn:bool=False, use_shortcut_activ:bool=False,
+                       use_shortcut_bn:bool=True, norm_type_inner:Optional[NormType]=NormType.Batch, 
+                       **conv_kwargs) -> nn.Module:
     """Builds a residual block that includes, at least, one up/downsampling convolution. 
     
     The shortcut path includes a 1x1 conv (with BN) to perform a simple up/downsample of the input before the addition.
@@ -142,15 +146,17 @@ def res_resample_block(in_ftrs, out_ftrs, n_extra_convs=1, resample_first:bool=T
         *final_layers)
 
 
-def res_upsample_block(in_ftrs, out_ftrs, n_extra_convs=1, upsample_first:bool=True, use_final_bn:bool=False, 
-                       use_shortcut_activ:bool=False, use_shortcut_bn:bool=True, norm_type_inner:Optional[NormType]=NormType.Batch,
-                       **conv_kwargs):
-    return res_resample_block(in_ftrs, out_ftrs, n_extra_convs, upsample_first, True, use_final_bn=use_final_bn,
-                              use_shortcut_activ=use_shortcut_activ, use_shortcut_bn=use_shortcut_bn,
-                              norm_type_inner=norm_type_inner, **conv_kwargs)
+def res_upsample_block(in_ftrs:int, out_ftrs:int, n_extra_convs:int=1, upsample_first:bool=True, 
+                       use_final_bn:bool=False, use_shortcut_activ:bool=False, use_shortcut_bn:bool=True, 
+                       norm_type_inner:Optional[NormType]=NormType.Batch, **conv_kwargs) -> nn.Module:
+    return res_resample_block(
+        in_ftrs, out_ftrs, n_extra_convs, upsample_first, True, use_final_bn=use_final_bn,
+        use_shortcut_activ=use_shortcut_activ, use_shortcut_bn=use_shortcut_bn,
+        norm_type_inner=norm_type_inner, **conv_kwargs)
 
 
-def res_downsample_block(in_ftrs, out_ftrs, n_extra_convs=1, downsample_first:bool=True, use_final_bn:bool=False, 
-                         use_shortcut_activ:bool=False, **conv_kwargs):
-    return res_resample_block(in_ftrs, out_ftrs, n_extra_convs, downsample_first, False, leaky=0.2, use_final_bn=use_final_bn,
-                              use_shortcut_activ=use_shortcut_activ, **conv_kwargs)
+def res_downsample_block(in_ftrs:int, out_ftrs:int, n_extra_convs:int=1, downsample_first:bool=True, 
+                         use_final_bn:bool=False, use_shortcut_activ:bool=False, **conv_kwargs) -> nn.Module:
+    return res_resample_block(
+        in_ftrs, out_ftrs, n_extra_convs, downsample_first, False, leaky=0.2, use_final_bn=use_final_bn, 
+        use_shortcut_activ=use_shortcut_activ, **conv_kwargs)

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any, Callable, List, Tuple
 import torch
 from fastai.core import is_listy
 from enum import Enum
@@ -17,7 +18,21 @@ def is_listy_or_tensor_array(l):
         return False
 
 
-def compare_tensor_lists(l1, l2, progress_tracker):
+class ProgressTracker(ABC):
+    @abstractmethod
+    def notify(self, message:str):
+        pass
+
+
+class PrinterProgressTracker(ProgressTracker):
+    def notify(self, message:str):
+        print(message)
+
+
+ListComparisonResult = List[Tuple[ListsInequalityType, List[int], Any, Any]]
+
+
+def compare_tensor_lists(l1, l2, progress_tracker:ProgressTracker) -> ListComparisonResult:
     """Returns the inequality type and indexes where the input lists differ. 
     
     Assumes l1 and l2 are listy, contain tensors and the leaf values can be
@@ -38,7 +53,7 @@ def compare_tensor_lists(l1, l2, progress_tracker):
                                     lambda a, b: a.item() == b.item())
   
 
-def compare_std_lists(l1, l2, progress_tracker):
+def compare_std_lists(l1, l2, progress_tracker:ProgressTracker) -> ListComparisonResult:
     """Returns the inequality type and indexes where the input lists differ. 
     
     Assumes l1 and l2 are built-in Python lists and the leaf values will be compared 
@@ -51,7 +66,7 @@ def compare_std_lists(l1, l2, progress_tracker):
         compare_std_lists(
             [[2, 4], [2], [3]], 
             [[2, 3], [1, 2], [3]], 
-            printer_progress_tracker())
+            PrinterProgressTracker())
         Returns:
             [(<ListsInequalityType.VALUE: 3>, [0, 1], 4, 3),
              (<ListsInequalityType.LEN: 1>, [1], 1, 2)]
@@ -60,7 +75,8 @@ def compare_std_lists(l1, l2, progress_tracker):
                                    lambda a, b: a == b)
 
 
-def compare_lists_recursive(l1, l2, progress_tracker, indexes, list_accesor, are_equal):
+def compare_lists_recursive(l1, l2, progress_tracker:ProgressTracker, indexes:List[int], list_accesor:Callable, 
+                            are_equal:Callable) -> ListComparisonResult:
     """Returns the inequality type and indexes where the input lists differ. 
 
     Assumes l1 and l2 are listy. The leaf items are the ones directly compared, by
@@ -87,7 +103,7 @@ def compare_lists_recursive(l1, l2, progress_tracker, indexes, list_accesor, are
         _compare_lists_recursive(
             [[2, 4], [2], [3]], 
             [[2, 3], [1, 2], [3]], 
-            printer_progress_tracker(), 
+            PrinterProgressTracker(), 
             [], 
             lambda l, i: l[i], 
             lambda a, b: a == b)
@@ -117,11 +133,6 @@ def compare_lists_recursive(l1, l2, progress_tracker, indexes, list_accesor, are
             # the current (and not the last) state of indexes to appear in this tuple.
             result.append((ListsInequalityType.VALUE, indexes + [i], l1_i, l2_i))
     return result
-
-
-class printer_progress_tracker:
-    def notify(self, message:str):
-        print(message)
 
 
 class Probability(ABC):

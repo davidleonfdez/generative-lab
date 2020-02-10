@@ -1,11 +1,14 @@
-from typing import Tuple
+from typing import Callable, Optional, Tuple
 import torch
-from fastai.vision import ifnone
+from fastai.vision import ifnone, LossFunction
 from core.gen_utils import Probability, SingleProbability
 
 
-def gan_loss_from_func(loss_gen, loss_crit, weights_gen:Tuple[float,float]=None,
-                       real_label_crit:Probability=None, fake_label_crit:Probability=None):
+GANGenCritLosses = Tuple[Callable, Callable]
+
+def gan_loss_from_func(loss_gen:LossFunction, loss_crit:LossFunction, real_label_crit:Probability, 
+                       fake_label_crit:Probability, 
+                       weights_gen:Optional[Tuple[float,float]]=None) -> GANGenCritLosses:
     "Define loss functions for a GAN from `loss_gen` and `loss_crit`. Assumes loss_crit applies sigmoid"
     def _loss_G(fake_pred, output, target, weights_gen=weights_gen):
         ones = fake_pred.new_ones(fake_pred.shape[0])
@@ -22,11 +25,11 @@ def gan_loss_from_func(loss_gen, loss_crit, weights_gen:Tuple[float,float]=None,
     return _loss_G, _loss_C
 
 
-def gan_loss_from_func_std(loss_gen, loss_crit, weights_gen:Tuple[float,float]=None):
-    return gan_loss_from_func(loss_gen, loss_crit, weights_gen, SingleProbability(1), SingleProbability(0))
+def gan_loss_from_func_std(loss_gen, loss_crit, weights_gen:Tuple[float,float]=None) -> GANGenCritLosses:
+    return gan_loss_from_func(loss_gen, loss_crit, SingleProbability(1), SingleProbability(0), weights_gen)
 
 
-def hinge_adversarial_losses(margin:float=1.):
+def hinge_adversarial_losses(margin:float=1.) -> GANGenCritLosses:
     def _loss_G(fake_pred, output, target):
         return -(fake_pred.mean())
 
