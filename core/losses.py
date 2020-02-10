@@ -4,7 +4,11 @@ from fastai.vision import ifnone, LossFunction
 from core.gen_utils import Probability, SingleProbability
 
 
+__all__ = ['GANGenCritLosses', 'gan_loss_from_func', 'gan_loss_from_func_std', 'hinge_adversarial_losses']
+
+
 GANGenCritLosses = Tuple[Callable, Callable]
+
 
 def gan_loss_from_func(loss_gen:LossFunction, loss_crit:LossFunction, real_label_crit:Probability, 
                        fake_label_crit:Probability, 

@@ -5,6 +5,10 @@ from fastai.vision import (conv_layer, init_default, Lambda, MergeLayer, NormTyp
 from core.torch_utils import get_relu
 
 
+__all__ = ['AvgFlatten()', 'upsample_layer', 'res_block_std', 'MergeResampleLayer', 'res_resample_block', 
+           'res_upsample_block', 'res_downsample_block']
+
+
 def AvgFlatten() -> nn.Module:
     "Takes the average of the input."
     return Lambda(lambda x: x.mean(0).view(1))

@@ -4,6 +4,10 @@ from fastai.vision import conv_layer, conv2d, conv2d_trans, NormType, res_block
 from core.layers import AvgFlatten, upsample_layer
 
 
+__all__ = ['custom_critic', 'interpolation_generator', 'pseudo_res_generator', 'simple_res_generator', 
+           'deep_res_generator', 'pseudo_res_critic', 'simple_res_critic', 'deep_res_critic']
+
+
 def custom_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers:int=0,
                   self_attention:bool=False, **conv_kwargs) -> nn.Module:
     """A basic critic for images `n_channels` x `in_size` x `in_size`.

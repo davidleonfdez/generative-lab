@@ -4,6 +4,10 @@ from fastai.core import is_listy
 from fastai.torch_core import requires_grad
 
 
+__all__ = ['get_relu', 'freeze_layers_if_condition', 'freeze_layers_of_types', 'freeze_dropout_layers', 
+           'freeze_bn_layers']
+
+
 def get_relu(leaky:float=None) -> Union[nn.ReLU, nn.LeakyReLU]:
     return nn.ReLU() if leaky is None else nn.LeakyReLU(leaky)
 

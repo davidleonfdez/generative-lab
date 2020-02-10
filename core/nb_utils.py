@@ -1,5 +1,8 @@
 import importlib
 
+
+__all__ = ['mount_gdrive']
+
 def mount_gdrive() -> str:
     """Mount Google Drive storage of the current Google account and return the root path.
 
