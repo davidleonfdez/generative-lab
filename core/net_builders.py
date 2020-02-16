@@ -1,7 +1,7 @@
 from typing import Optional
 import torch.nn as nn
 from fastai.vision import conv_layer, conv2d, conv2d_trans, NormType, res_block
-from core.layers import AvgFlatten, upsample_layer
+from core.layers import AvgFlatten, res_block_std, upsample_layer
 
 
 __all__ = ['custom_critic', 'interpolation_generator', 'pseudo_res_generator', 'simple_res_generator', 
