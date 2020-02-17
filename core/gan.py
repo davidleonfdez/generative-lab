@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 from functools import partial
 from typing import Callable, Optional, Tuple, Union
 import torch
@@ -12,6 +13,14 @@ from core.losses import gan_loss_from_func, gan_loss_from_func_std
 
 __all__ = ['GANLossArgs', 'GANGPLossArgs', 'CustomGANLoss', 'GANGPLoss', 'CustomGANTrainer', 'CustomGANLearner', 
            'GANGPLearner', 'save_gan_learner', 'load_gan_learner', 'train_checkpoint_gan']
+
+
+# TODO: use a better implementation of constant group. A variable of type StateDictKeys can be
+# used and makes no sense.
+class StateDictKeys(Enum):
+    CRITIC = 'critic'
+    GENERATOR = 'generator'
+    OPT = 'opt'
 
 
 @dataclass
@@ -159,17 +168,18 @@ class GANGPLearner(CustomGANLearner):
 
 def save_gan_learner(learner:CustomGANLearner, path:PathOrStr):
     torch.save({
-        'critic': learner.model.critic.state_dict(),
-        'generator': learner.model.generator.state_dict(),
-        'opt': learner.gan_trainer.get_opts_state_dict()
+        StateDictKeys.CRITIC.value: learner.model.critic.state_dict(),
+        StateDictKeys.GENERATOR.value: learner.model.generator.state_dict(),
+        StateDictKeys.OPT.value: learner.gan_trainer.get_opts_state_dict()
     }, path)
     
     
 def load_gan_learner(learner:CustomGANLearner, path:PathOrStr):
     state_dict = torch.load(path)
-    learner.model.critic.load_state_dict(state_dict['critic'])
-    learner.model.generator.load_state_dict(state_dict['generator'])
-    learner.gan_trainer.load_opts_from_state_dict(state_dict['opt'])
+    learner.model.critic.load_state_dict(state_dict[StateDictKeys.CRITIC.value])
+    learner.model.generator.load_state_dict(state_dict[StateDictKeys.GENERATOR.value])
+    if StateDictKeys.OPT.value in state_dict:
+        learner.gan_trainer.load_opts_from_state_dict(state_dict[StateDictKeys.OPT.value])
 
 
 def train_checkpoint_gan(learner:Learner, n_epochs:int, initial_epoch:int, filename_start:str, 
