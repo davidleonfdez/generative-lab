@@ -115,7 +115,7 @@ class CustomGANTrainer(GANTrainer):
 
 
 class CustomGANLearner(Learner):
-    "A `Learner` suitable for GANs that uses gradient penalty to enforce Lipschitz constraint."
+    "A `Learner` suitable for GANs."
     def __init__(self, data:DataBunch, generator:nn.Module, critic:nn.Module, gan_loss_args:GANLossArgs,
                  switcher:Optional[Callback]=None, gen_first:bool=False, switch_eval:bool=True,
                  show_img:bool=True, clip:Optional[float]=None, **learn_kwargs):

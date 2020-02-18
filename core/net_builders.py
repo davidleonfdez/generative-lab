@@ -114,7 +114,7 @@ def deep_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features
 
 
 def pseudo_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers:int=0, dense:bool=False, 
-                      **conv_kwargs) -> nn.Module:
+                      conv_before_res:bool=True, **conv_kwargs) -> nn.Module:
     "A resnet-ish critic for images `n_channels` x `in_size` x `in_size`."
     leaky = 0.2
     layers = [conv_layer(n_channels, n_features, 4, 2, 1, leaky=0.2, norm_type=None, **conv_kwargs)]
@@ -122,10 +122,11 @@ def pseudo_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_la
     layers.append(nn.Sequential(*[conv_layer(cur_ftrs, cur_ftrs, 3, 1, leaky=leaky, **conv_kwargs) 
                                   for _ in range(n_extra_layers)]))
     while cur_size > 4:
-        layers.append(conv_layer(cur_ftrs, cur_ftrs*2, 4, 2, 1, leaky=leaky, **conv_kwargs))
+        conv = conv_layer(cur_ftrs, cur_ftrs*2, 4, 2, 1, leaky=leaky, **conv_kwargs)
         cur_ftrs *= 2; cur_size //= 2
-        layers.append(res_block_std(cur_ftrs, dense=dense, leaky=leaky))
+        res_bl = res_block_std(cur_ftrs, dense=dense, leaky=leaky)
         if (dense): cur_ftrs *= 2
+        layers += [conv, res_bl] if conv_before_res else [res_bl, conv]
         
     layers += [conv2d(cur_ftrs, 1, 4, padding=0), AvgFlatten()]
     return nn.Sequential(*layers)
