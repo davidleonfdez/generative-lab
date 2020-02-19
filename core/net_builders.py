@@ -1,7 +1,7 @@
 from typing import Optional
 import torch.nn as nn
 from fastai.vision import conv_layer, conv2d, conv2d_trans, NormType, res_block
-from core.layers import AvgFlatten, res_block_std, upsample_layer
+from core.layers import AvgFlatten, res_block_std, res_downsample_block, res_upsample_block, upsample_layer
 
 
 __all__ = ['custom_critic', 'interpolation_generator', 'pseudo_res_generator', 'simple_res_generator', 
@@ -121,13 +121,20 @@ def pseudo_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_la
     cur_size, cur_ftrs = in_size//2, n_features
     layers.append(nn.Sequential(*[conv_layer(cur_ftrs, cur_ftrs, 3, 1, leaky=leaky, **conv_kwargs) 
                                   for _ in range(n_extra_layers)]))
+
     while cur_size > 4:
-        conv = conv_layer(cur_ftrs, cur_ftrs*2, 4, 2, 1, leaky=leaky, **conv_kwargs)
-        cur_ftrs *= 2; cur_size //= 2
-        res_bl = res_block_std(cur_ftrs, dense=dense, leaky=leaky)
-        if (dense): cur_ftrs *= 2
+        conv_in_ftrs = cur_ftrs if conv_before_res or not dense else cur_ftrs*2
+        conv_out_ftrs = conv_in_ftrs * 2
+        conv = conv_layer(conv_in_ftrs, conv_out_ftrs, 4, 2, 1, leaky=leaky, **conv_kwargs)
+
+        res_ftrs = conv_out_ftrs if conv_before_res else cur_ftrs
+        res_bl = res_block_std(res_ftrs, dense=dense, leaky=leaky)
+
         layers += [conv, res_bl] if conv_before_res else [res_bl, conv]
-        
+
+        cur_ftrs *= 2; cur_size //= 2
+        if (dense): cur_ftrs *= 2
+
     layers += [conv2d(cur_ftrs, 1, 4, padding=0), AvgFlatten()]
     return nn.Sequential(*layers)
 
