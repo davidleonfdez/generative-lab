@@ -74,7 +74,7 @@ class GANGPLoss(CustomGANLoss):
         epsilon_vec = torch.rand(real.shape[0], 1, 1, 1, dtype=torch.float, device=real.device, requires_grad=False)
         epsilon = epsilon_vec.expand_as(real)
         x_hat = epsilon * real + (1 - epsilon) * fake
-        x_hat_pred = critic(x_hat)
+        x_hat_pred = self.gan_model.critic(x_hat)
 
         grads = torch.autograd.grad(outputs=x_hat_pred, inputs=x_hat, create_graph=True)[0]
 
