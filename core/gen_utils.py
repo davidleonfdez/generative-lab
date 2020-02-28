@@ -105,7 +105,7 @@ def compare_lists_recursive(l1, l2, progress_tracker:ProgressTracker, indexes:Li
             -value2 (contained in or related to l2), different than value1
 
     Example:
-        _compare_lists_recursive(
+        compare_lists_recursive(
             [[2, 4], [2], [3]], 
             [[2, 3], [1, 2], [3]], 
             PrinterProgressTracker(), 
@@ -171,6 +171,8 @@ class RandomProbability(Probability):
         super().__init__()
         if min_val < 0 or max_val > 1:
             raise ValueError("Allowed probability values must be in the range [0, 1]")
+        if min_val > max_val:
+            raise ValueError("Minimum random probability value (min_val) must NOT be greater than max_val")
         self.min_val = min_val
         self.max_val = max_val
 

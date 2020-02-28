@@ -15,7 +15,7 @@ __all__ = ['GANLossArgs', 'GANGPLossArgs', 'CustomGANLoss', 'GANGPLoss', 'Custom
            'GANGPLearner', 'save_gan_learner', 'load_gan_learner', 'train_checkpoint_gan']
 
 
-# TODO: use a better implementation of constant group. A variable of type StateDictKeys can be
+# TODO: use a better implementation of a group of constants. A variable of type StateDictKeys can be
 # used and makes no sense.
 class StateDictKeys(Enum):
     CRITIC = 'critic'
