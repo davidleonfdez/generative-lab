@@ -140,6 +140,10 @@ def compare_lists_recursive(l1, l2, progress_tracker:ProgressTracker, indexes:Li
     return result
 
 
+def conv_out_size(in_size:int, ks:int, stride:int, padding:int) -> int:
+    return (in_size + 2 * padding - ks) // stride + 1
+
+
 class Probability(ABC):
     def __init__(self):
         pass

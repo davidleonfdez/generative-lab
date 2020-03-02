@@ -1,8 +1,8 @@
 import math
 import pytest
 import torch
-from core.gen_utils import (compare_std_lists, compare_tensor_lists, is_listy_or_tensor_array, ListsInequalityType, 
-                            ProgressTracker, RandomProbability, SingleProbability)
+from core.gen_utils import (compare_std_lists, compare_tensor_lists, conv_out_size, is_listy_or_tensor_array,
+                            ListsInequalityType, ProgressTracker, RandomProbability, SingleProbability)
 
 
 class DummyProgressTracker(ProgressTracker):
@@ -147,3 +147,46 @@ class TestRandomProbability:
     def test_raises_error_if_min_gt_max(self):
         with pytest.raises(BaseException):
             prob = RandomProbability(0.2, 0.1)
+
+
+class TestConvOutSize:
+    def test_ks1_padd0(self):
+        in_size = 4
+        out = conv_out_size(4, 1, 1, 0)
+        assert out == in_size
+
+    def test_inc_ks1_padd0(self):
+        in_size = 4
+        out = conv_out_size(4, 1, 1, 1)
+        assert out == in_size + 2
+
+    def test_ks2_padd0(self):
+        in_size = 4
+        out = conv_out_size(4, 2, 1, 0)
+        assert out == 3
+
+    def test_ks2_stride2_padd0(self):
+        in_size = 4
+        out_even = conv_out_size(in_size, 2, 2, 0)
+        out_odd = conv_out_size(in_size+1, 2, 2, 0)
+        assert out_even == 2
+        assert out_odd == 2
+
+    def test_k3_stride1_padd1(self):
+        in_size = 5
+        out = conv_out_size(in_size, 3, 1, 1)
+        assert out == 5
+
+    def test_k4_stride2_padd0(self):
+        in_size = 8
+        out_even = conv_out_size(in_size, 4, 2, 0)
+        out_odd = conv_out_size(in_size+1, 4, 2, 0)
+        assert out_even == 3
+        assert out_odd == 3
+
+    def test_k4_stride2_padd1(self):
+        in_size = 8
+        out_even = conv_out_size(in_size, 4, 2, 1)
+        out_odd = conv_out_size(in_size+1, 4, 2, 1)
+        assert out_even == 4
+        assert out_odd == 4
