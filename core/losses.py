@@ -23,9 +23,9 @@ def gan_loss_from_func(loss_gen:LossFunction, loss_crit:LossFunction, real_label
         return result
 
     def _loss_C(real_pred, fake_pred):
-        ones = fake_pred.new_full((fake_pred.shape[0],), real_label_crit.prob)
-        zeros = fake_pred.new_full((fake_pred.shape[0],), fake_label_crit.prob)
-        result = (loss_crit(real_pred, ones) + loss_crit(fake_pred, zeros)) / 2
+        ones_or_close = fake_pred.new_full((fake_pred.shape[0],), real_label_crit.prob)
+        zeros_or_close = fake_pred.new_full((fake_pred.shape[0],), fake_label_crit.prob)
+        result = (loss_crit(real_pred, ones_or_close) + loss_crit(fake_pred, zeros_or_close)) / 2
         return result
 
     return _loss_G, _loss_C
