@@ -70,7 +70,7 @@ class TestHingeAdversarialLosses:
         real_pred = torch.tensor([1., 1., 1.])
         fake_pred_further = torch.tensor([-10., -10., -10.])
         real_pred_further = torch.tensor([10., 10., 10.])
-        # Fake and real have no effect over the result. Args are expected just for compatibility with GANLearner
+        # Fake and real have no effect over the result. Args are required just for compatibility with GANLearner
         fake = torch.tensor([8, 8])
         real = torch.tensor([9, 9])
 
@@ -85,7 +85,7 @@ class TestHingeAdversarialLosses:
         real_pred = torch.tensor([-1., -1., -1.])
         fake_pred_further = torch.tensor([10., 10., 10.])
         real_pred_further = torch.tensor([-10., -10., -10.])
-        # Fake and real have no effect over the result. Args are expected just for compatibility with GANLearner
+        # Fake and real have no effect over the result. Args are required just for compatibility with GANLearner
         fake = torch.tensor([9, 9])
         real = torch.tensor([9, 9])
 
@@ -98,7 +98,7 @@ class TestHingeAdversarialLosses:
         loss_g, loss_c = hinge_adversarial_losses()
         fake_pred = torch.tensor([-7.6, 0.2, 1.4])
         real_pred = torch.tensor([1.8, 0.8, -1.5])
-        # Fake and real have no effect over the result. Args are expected just for compatibility with GANLearner
+        # Fake and real have no effect over the result. Args are required just for compatibility with GANLearner
         fake = torch.tensor([6, 9])
         real = torch.tensor([9, 9])
 
@@ -111,7 +111,7 @@ class TestHingeAdversarialLosses:
         real_pred = torch.tensor([2., 2., 2.])
         fake_pred_further = torch.tensor([-10., -10., -10.])
         real_pred_further = torch.tensor([10., 10., 10.])
-        # Fake and real have no effect over the result. Args are expected just for compatibility with GANLearner
+        # Fake and real have no effect over the result. Args are required just for compatibility with GANLearner
         fake = torch.tensor([8, 8])
         real = torch.tensor([9, 9])
 
@@ -128,7 +128,7 @@ class TestHingeLikeAdversarialLosses:
         real_pred = torch.tensor([1., 1., 1.])
         fake_pred_further = torch.tensor([-10., -10., -10.])
         real_pred_further = torch.tensor([10., 10., 10.])
-        # Fake and real have no effect over the result. Args are expected just for compatibility with GANLearner
+        # Fake and real have no effect over the result. Args are required just for compatibility with GANLearner
         fake = torch.tensor([5, 6])
         real = torch.tensor([9, 9])
 
@@ -143,7 +143,7 @@ class TestHingeLikeAdversarialLosses:
         real_pred = torch.tensor([1., 1., 1.])
         fake_pred_further = torch.tensor([10., 9., 11.])
         real_pred_further = torch.tensor([10., 10., 18.])
-        # Fake and real have no effect over the result. Args are expected just for compatibility with GANLearner
+        # Fake and real have no effect over the result. Args are required just for compatibility with GANLearner
         fake = torch.tensor([5, 6])
         real = torch.tensor([9, 9])
 
@@ -156,9 +156,21 @@ class TestHingeLikeAdversarialLosses:
         loss_g, loss_c = hinge_like_adversarial_losses(1., 1., -1)
         fake_pred = torch.tensor([-5.1, 0.5, 1.4])
         real_pred = torch.tensor([2., -1.5, 0.5])
-        # Fake and real have no effect over the result. Args are expected just for compatibility with GANLearner
+        # Fake and real have no effect over the result. Args are required just for compatibility with GANLearner
         fake = torch.tensor([5, 6])
         real = torch.tensor([9, 9])
 
         assert loss_g(fake_pred, fake, real) == 2.2
         assert math.isclose(loss_c(real_pred, fake_pred).item(), 2.3, abs_tol=1e-3)
+
+    def test_margin_inf_all(self):
+        # This is not really a hinge loss, but it's fine to test the function
+        loss_g, loss_c = hinge_like_adversarial_losses(math.inf, math.inf, -math.inf)
+        fake_pred = torch.tensor([-100., -50., 75.])
+        real_pred = torch.tensor([-25., 10., 36.])
+        # Fake and real have no effect over the result. Args are required just for compatibility with GANLearner
+        fake = torch.tensor([5, 6])
+        real = torch.tensor([9, 9])
+
+        assert loss_g(fake_pred, fake, real) == 25
+        assert loss_c(real_pred, fake_pred) == -32

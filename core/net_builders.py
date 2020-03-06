@@ -39,7 +39,7 @@ def interpolation_generator(in_size:int, n_channels:int, noise_sz:int=100, n_fea
                                      padding=1, upsample_mode=upsample_mode, **conv_kwargs))
         cur_ftrs //= 2; cur_size *= 2
         layers.append(res_block(cur_ftrs, dense=dense))
-        if (dense): cur_ftrs *= 2
+        if dense: cur_ftrs *= 2
 
     layers += [conv_layer(cur_ftrs, cur_ftrs, 3, 1, 1, transpose=True, **conv_kwargs) for _ in range(n_extra_layers)]
     layers += [upsample_layer(cur_ftrs, n_channels, scale_factor=2, upsample_mode=upsample_mode, bias=False), nn.Tanh()]
@@ -57,7 +57,7 @@ def pseudo_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_featur
         layers.append(conv_layer(cur_ftrs, cur_ftrs//2, 4, 2, 1, transpose=True, **conv_kwargs))
         cur_ftrs //= 2; cur_size *= 2
         layers.append(res_block(cur_ftrs, dense=dense))
-        if (dense): cur_ftrs *= 2
+        if dense: cur_ftrs *= 2
 
     layers += [conv_layer(cur_ftrs, cur_ftrs, 3, 1, 1, transpose=True, **conv_kwargs) for _ in range(n_extra_layers)]
     layers += [conv2d_trans(cur_ftrs, n_channels, 4, 2, 1, bias=False), nn.Tanh()]
@@ -90,9 +90,11 @@ def deep_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features
     cur_size, cur_ftrs = 4, n_features//2
     while cur_size < in_size:  cur_size *= 2; cur_ftrs *= 2
     layers = [conv_layer(noise_sz, cur_ftrs, 4, 1, transpose=True, **conv_kwargs)]
-    layers += [res_block_std(cur_ftrs, dense=dense, use_final_activ=use_final_activ_res_blocks, 
-                             use_final_bn=use_final_bn, norm_type_inner=norm_type_inner) 
-               for _ in range(n_extra_blocks_begin)]
+    layers += [res_block_std(cur_ftrs * 2**i if dense else cur_ftrs, dense=dense, 
+                             use_final_activ=use_final_activ_res_blocks, use_final_bn=use_final_bn, 
+                             norm_type_inner=norm_type_inner) 
+               for i in range(n_extra_blocks_begin)]
+    if dense: cur_ftrs *= 2 ** n_extra_blocks_begin
 
     cur_size = 4
     while cur_size < in_size // 2:
@@ -101,14 +103,17 @@ def deep_res_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features
                                          use_shortcut_activ=use_shortcut_activ, use_shortcut_bn=use_shortcut_bn,
                                          norm_type_inner=norm_type_inner, **conv_kwargs))
         cur_ftrs //= 2; cur_size *= 2
-        layers += [res_block_std(cur_ftrs, dense=dense, use_final_activ=use_final_activ_res_blocks, 
-                                 use_final_bn=use_final_bn, norm_type_inner=norm_type_inner) 
-                   for _ in range(n_blocks_between_upblocks)]
-        if (dense): cur_ftrs *= 2
+        layers += [res_block_std(cur_ftrs * 2**i if dense else cur_ftrs, dense=dense, 
+                                 use_final_activ=use_final_activ_res_blocks, use_final_bn=use_final_bn, 
+                                 norm_type_inner=norm_type_inner) 
+                   for i in range(n_blocks_between_upblocks)]
+        if dense: cur_ftrs *= 2 ** n_blocks_between_upblocks
 
-    layers += [res_block_std(cur_ftrs, dense=dense, use_final_activ=use_final_activ_res_blocks, 
-                             use_final_bn=use_final_bn, norm_type_inner=norm_type_inner) 
-               for _ in range(n_extra_blocks_end)]
+    layers += [res_block_std(cur_ftrs * 2**i if dense else cur_ftrs, dense=dense, 
+                             use_final_activ=use_final_activ_res_blocks, use_final_bn=use_final_bn, 
+                             norm_type_inner=norm_type_inner) 
+               for i in range(n_extra_blocks_end)]
+    if dense: cur_ftrs *= 2 ** n_extra_blocks_end
     layers += [conv2d_trans(cur_ftrs, n_channels, 4, 2, 1, bias=False), nn.Tanh()]
     return nn.Sequential(*layers)
 
@@ -133,7 +138,7 @@ def pseudo_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_la
         layers += [conv, res_bl] if conv_before_res else [res_bl, conv]
 
         cur_ftrs *= 2; cur_size //= 2
-        if (dense): cur_ftrs *= 2
+        if dense: cur_ftrs *= 2
 
     layers += [conv2d(cur_ftrs, 1, 4, padding=0), AvgFlatten()]
     return nn.Sequential(*layers)
@@ -177,7 +182,7 @@ def deep_res_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_bloc
         layers += [res_block_std(cur_ftrs, dense=dense, leaky=leaky, use_final_activ=use_final_activ_res_blocks, 
                                  use_final_bn=use_final_bn, norm_type_inner=norm_type_inner) 
                    for _ in range(n_blocks_between_downblocks)]
-        if (dense): cur_ftrs *= 2
+        if dense: cur_ftrs *= 2
         
     layers += [res_block_std(cur_ftrs, dense=dense, leaky=leaky, use_final_activ=use_final_activ_res_blocks, 
                              use_final_bn=use_final_bn, norm_type_inner=norm_type_inner) 

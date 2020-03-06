@@ -1,32 +1,10 @@
-import more_itertools
-from typing import List, Type
 import torch
 import torch.nn as nn
 from fastai.layers import flatten_model, NormType
 from core.layers import (AvgFlatten, MergeResampleLayer, res_block_std, upsample_layer, res_downsample_block, 
                          res_upsample_block)
-
-
-def _model_contains_layer(flattened_model:List[nn.Module], layer_type:Type[nn.Module]):
-    return any(isinstance(l, layer_type) for l in flattened_model)
-
-
-def _count_layers(flattened_model:List[nn.Module], layer_type:Type[nn.Module]):
-    return more_itertools.ilen(l for l in flattened_model if isinstance(l, layer_type))
-
-
-def _get_first_layer_with_ind(flattened_model:List[nn.Module], layer_type:Type[nn.Module]):
-    for index, l in enumerate(flattened_model):
-        if isinstance(l, layer_type): return (index, l)
-    return (-1, None)
-
-
-def _get_first_layer(flattened_model:List[nn.Module], layer_type:Type[nn.Module]):
-    return _get_first_layer_with_ind(flattened_model, layer_type)[1]
-
-
-def _get_first_index_of_layer(flattened_model:List[nn.Module], layer_type:Type[nn.Module]):
-    return _get_first_layer_with_ind(flattened_model, layer_type)[0]
+from core.torch_utils import (count_layers, get_first_index_of_layer, get_first_layer, get_first_layer_with_ind,
+                              model_contains_layer)
 
 
 class TestAvgFlatten:
@@ -54,10 +32,10 @@ class TestUpsampleLayer:
         output = model(torch.rand(bs, in_ftrs, sz1, sz2))
 
         assert up_layer.mode == 'bilinear'
-        assert _model_contains_layer(flattened_model, nn.Conv2d)
-        assert _model_contains_layer(flattened_model, nn.BatchNorm2d)
-        assert _model_contains_layer(flattened_model, nn.ReLU)
-        assert not _model_contains_layer(flattened_model, nn.LeakyReLU)
+        assert model_contains_layer(flattened_model, nn.Conv2d)
+        assert model_contains_layer(flattened_model, nn.BatchNorm2d)
+        assert model_contains_layer(flattened_model, nn.ReLU)
+        assert not model_contains_layer(flattened_model, nn.LeakyReLU)
         assert output.size() == torch.Size([bs, out_ftrs, sz1*2, sz2*2])
 
     def test_bigger_up_bicubic_no_activ(self):
@@ -75,10 +53,10 @@ class TestUpsampleLayer:
         output = model(torch.rand(bs, in_ftrs, sz1, sz2))
 
         assert up_layer.mode == 'bicubic'
-        assert _model_contains_layer(flattened_model, nn.Conv2d)      
-        assert not _model_contains_layer(flattened_model, nn.BatchNorm2d)
-        assert not _model_contains_layer(flattened_model, nn.ReLU)
-        assert not _model_contains_layer(flattened_model, nn.LeakyReLU)
+        assert model_contains_layer(flattened_model, nn.Conv2d)      
+        assert not model_contains_layer(flattened_model, nn.BatchNorm2d)
+        assert not model_contains_layer(flattened_model, nn.ReLU)
+        assert not model_contains_layer(flattened_model, nn.LeakyReLU)
         assert output.size() == torch.Size([bs, out_ftrs, sz1*scale_factor, sz2*scale_factor])
 
     def test_extra_conv(self):
@@ -99,8 +77,8 @@ class TestUpsampleLayer:
         model = upsample_layer(32, 16, leaky=leaky_slope)
         flattened_model = flatten_model(model)
 
-        assert _model_contains_layer(flattened_model, nn.LeakyReLU)
-        assert not _model_contains_layer(flattened_model, nn.ReLU)
+        assert model_contains_layer(flattened_model, nn.LeakyReLU)
+        assert not model_contains_layer(flattened_model, nn.ReLU)
 
 
 class TestResBlockStd:
@@ -115,9 +93,9 @@ class TestResBlockStd:
         output = model(torch.rand(bs, nf, sz1, sz2))
 
         assert output.size() == torch.Size([bs, nf, sz1, sz2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 2
-        assert _count_layers(flattened_model, nn.ReLU) == 2
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 2
+        assert count_layers(flattened_model, nn.Conv2d) == 2
+        assert count_layers(flattened_model, nn.ReLU) == 2
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 2
 
     def test_dense_output_size(self):
         nf = 32
@@ -130,9 +108,9 @@ class TestResBlockStd:
         output = model(torch.rand(bs, nf, sz1, sz2))
 
         assert output.size() == torch.Size([bs, nf*2, sz1, sz2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 2
-        assert _count_layers(flattened_model, nn.ReLU) == 2
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 2
+        assert count_layers(flattened_model, nn.Conv2d) == 2
+        assert count_layers(flattened_model, nn.ReLU) == 2
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 2
 
     def test_leaky(self):
         nf = 32
@@ -146,10 +124,10 @@ class TestResBlockStd:
         output = model(torch.rand(bs, nf, sz1, sz2))
 
         assert output.size() == torch.Size([bs, nf, sz1, sz2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 2
-        assert _count_layers(flattened_model, nn.LeakyReLU) == 2
-        assert not _model_contains_layer(flattened_model, nn.ReLU)
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 2
+        assert count_layers(flattened_model, nn.Conv2d) == 2
+        assert count_layers(flattened_model, nn.LeakyReLU) == 2
+        assert not model_contains_layer(flattened_model, nn.ReLU)
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 2
 
     def test_final_activ(self):
         nf = 32
@@ -162,9 +140,9 @@ class TestResBlockStd:
         output = model(torch.rand(bs, nf, sz1, sz2))
 
         assert output.size() == torch.Size([bs, nf, sz1, sz2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 2
-        assert _count_layers(flattened_model, nn.ReLU) == 3
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 2
+        assert count_layers(flattened_model, nn.Conv2d) == 2
+        assert count_layers(flattened_model, nn.ReLU) == 3
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 2
 
     def test_final_bn(self):
         nf = 32
@@ -177,9 +155,9 @@ class TestResBlockStd:
         output = model(torch.rand(bs, nf, sz1, sz2))
 
         assert output.size() == torch.Size([bs, nf, sz1, sz2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 2
-        assert _count_layers(flattened_model, nn.ReLU) == 2
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 3
+        assert count_layers(flattened_model, nn.Conv2d) == 2
+        assert count_layers(flattened_model, nn.ReLU) == 2
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 3
 
 
 class TestMergeResampleLayer:
@@ -227,13 +205,13 @@ class TestResUpsampleBlock:
         output = model(torch.rand(bs, in_ftrs, sz1, sz2))
 
         assert output.size() == torch.Size([bs, out_ftrs, sz1*2, sz2*2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 1
-        assert _count_layers(flattened_model, nn.ConvTranspose2d) == 2
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 3
-        assert _count_layers(flattened_model, nn.ReLU) == 3
-        assert not _model_contains_layer(flattened_model, nn.LeakyReLU)
-        assert (_get_first_index_of_layer(flattened_model, nn.ConvTranspose2d)
-               < _get_first_index_of_layer(flattened_model, nn.Conv2d))
+        assert count_layers(flattened_model, nn.Conv2d) == 1
+        assert count_layers(flattened_model, nn.ConvTranspose2d) == 2
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 3
+        assert count_layers(flattened_model, nn.ReLU) == 3
+        assert not model_contains_layer(flattened_model, nn.LeakyReLU)
+        assert (get_first_index_of_layer(flattened_model, nn.ConvTranspose2d)
+               < get_first_index_of_layer(flattened_model, nn.Conv2d))
 
     def test_upsample_last(self):
         in_ftrs = 32
@@ -247,13 +225,13 @@ class TestResUpsampleBlock:
         output = model(torch.rand(bs, in_ftrs, sz1, sz2))
 
         assert output.size() == torch.Size([bs, out_ftrs, sz1*2, sz2*2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 1
-        assert _count_layers(flattened_model, nn.ConvTranspose2d) == 2
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 3
-        assert _count_layers(flattened_model, nn.ReLU) == 3
-        assert not _model_contains_layer(flattened_model, nn.LeakyReLU)
-        assert (_get_first_index_of_layer(flattened_model, nn.ConvTranspose2d)
-               > _get_first_index_of_layer(flattened_model, nn.Conv2d))
+        assert count_layers(flattened_model, nn.Conv2d) == 1
+        assert count_layers(flattened_model, nn.ConvTranspose2d) == 2
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 3
+        assert count_layers(flattened_model, nn.ReLU) == 3
+        assert not model_contains_layer(flattened_model, nn.LeakyReLU)
+        assert (get_first_index_of_layer(flattened_model, nn.ConvTranspose2d)
+               > get_first_index_of_layer(flattened_model, nn.Conv2d))
 
     def test_all_bn_activ(self):
         in_ftrs = 32
@@ -267,10 +245,10 @@ class TestResUpsampleBlock:
         output = model(torch.rand(bs, in_ftrs, sz1, sz2))
 
         assert output.size() == torch.Size([bs, out_ftrs, sz1*2, sz2*2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 1
-        assert _count_layers(flattened_model, nn.ConvTranspose2d) == 2
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 4
-        assert _count_layers(flattened_model, nn.ReLU) == 4
+        assert count_layers(flattened_model, nn.Conv2d) == 1
+        assert count_layers(flattened_model, nn.ConvTranspose2d) == 2
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 4
+        assert count_layers(flattened_model, nn.ReLU) == 4
 
     def test_no_bn(self):
         in_ftrs = 32
@@ -284,7 +262,7 @@ class TestResUpsampleBlock:
         output = model(torch.rand(bs, in_ftrs, sz1, sz2))
 
         assert output.size() == torch.Size([bs, out_ftrs, sz1*2, sz2*2])
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 0
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 0
 
 
 class TestResDownsampleBlock:
@@ -300,11 +278,11 @@ class TestResDownsampleBlock:
         output = model(torch.rand(bs, in_ftrs, sz1, sz2))
 
         assert output.size() == torch.Size([bs, out_ftrs, sz1//2, sz2//2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 3
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 3
-        assert _count_layers(flattened_model, nn.LeakyReLU) == 3
-        assert not _model_contains_layer(flattened_model, nn.ReLU)
-        first_conv = _get_first_layer(flattened_model, nn.Conv2d)
+        assert count_layers(flattened_model, nn.Conv2d) == 3
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 3
+        assert count_layers(flattened_model, nn.LeakyReLU) == 3
+        assert not model_contains_layer(flattened_model, nn.ReLU)
+        first_conv = get_first_layer(flattened_model, nn.Conv2d)
         # Maybe too explicit and implementation dependant?
         downsample_first = first_conv.kernel_size == (4, 4) and first_conv.stride == (2, 2)
         assert downsample_first
@@ -321,11 +299,11 @@ class TestResDownsampleBlock:
         output = model(torch.rand(bs, in_ftrs, sz1, sz2))
 
         assert output.size() == torch.Size([bs, out_ftrs, sz1//2, sz2//2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 3
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 3
-        assert _count_layers(flattened_model, nn.LeakyReLU) == 3
-        assert not _model_contains_layer(flattened_model, nn.ReLU)
-        first_conv = _get_first_layer(flattened_model, nn.Conv2d)
+        assert count_layers(flattened_model, nn.Conv2d) == 3
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 3
+        assert count_layers(flattened_model, nn.LeakyReLU) == 3
+        assert not model_contains_layer(flattened_model, nn.ReLU)
+        first_conv = get_first_layer(flattened_model, nn.Conv2d)
         # Maybe too explicit and implementation dependant?
         downsample_last = first_conv.kernel_size == (3, 3) and first_conv.stride == (1, 1)
         assert downsample_last
@@ -342,10 +320,10 @@ class TestResDownsampleBlock:
         output = model(torch.rand(bs, in_ftrs, sz1, sz2))
 
         assert output.size() == torch.Size([bs, out_ftrs, sz1//2, sz2//2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 3
-        assert _count_layers(flattened_model, nn.BatchNorm2d) == 4
-        assert _count_layers(flattened_model, nn.LeakyReLU) == 4
-        assert not _model_contains_layer(flattened_model, nn.ReLU)
+        assert count_layers(flattened_model, nn.Conv2d) == 3
+        assert count_layers(flattened_model, nn.BatchNorm2d) == 4
+        assert count_layers(flattened_model, nn.LeakyReLU) == 4
+        assert not model_contains_layer(flattened_model, nn.ReLU)
 
     def test_extra_convs(self):
         in_ftrs = 32
@@ -359,4 +337,4 @@ class TestResDownsampleBlock:
         output = model(torch.rand(bs, in_ftrs, sz1, sz2))
 
         assert output.size() == torch.Size([bs, out_ftrs, sz1//2, sz2//2])
-        assert _count_layers(flattened_model, nn.Conv2d) == 5
+        assert count_layers(flattened_model, nn.Conv2d) == 5
