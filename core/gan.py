@@ -36,7 +36,7 @@ class GANGPLossArgs(GANLossArgs):
 
 
 class CustomGANLoss(GANModule):
-    "Wrapper around `loss_funcC` (for the critic) and `loss_funcG` (for the generator). Adds a gradient penalty for the critic."
+    "Wrapper around `loss_funcC` (for the critic) and `loss_funcG` (for the generator)."
     def __init__(self, loss_wrapper_args:GANLossArgs, gan_model:GANModule):
         super().__init__()
         self.loss_funcG,self.loss_funcC,self.gan_model = loss_wrapper_args.gen_loss_func,loss_wrapper_args.crit_loss_func,gan_model
@@ -53,11 +53,19 @@ class CustomGANLoss(GANModule):
         return self.loss_funcC(real_pred, fake_pred)
 
 
+def random_epsilon_gp_sampler(real: torch.Tensor, fake: torch.Tensor) -> torch.Tensor:
+    # A different random value of epsilon for any element of a batch
+    epsilon_vec = torch.rand(real.shape[0], 1, 1, 1, dtype=torch.float, device=real.device, requires_grad=False)
+    return epsilon_vec.expand_as(real)
+
+
 class GANGPLoss(CustomGANLoss):
     "Wrapper around `loss_funcC` (for the critic) and `loss_funcG` (for the generator). Adds a gradient penalty for the critic."
-    def __init__(self, loss_wrapper_args:GANGPLossArgs, gan_model:GANModule):
+    def __init__(self, loss_wrapper_args:GANGPLossArgs, gan_model:GANModule, 
+                 epsilon_gp_sampler:Callable[[torch.Tensor,torch.Tensor],torch.Tensor]=None):
         super().__init__(loss_wrapper_args, gan_model)
         self.real_provider,self.plambda = loss_wrapper_args.real_provider,loss_wrapper_args.plambda
+        self.epsilon_sampler = epsilon_gp_sampler if epsilon_gp_sampler is not None else random_epsilon_gp_sampler
 
     def critic(self, real_pred, input):
         "Create some `fake_pred` with the generator from `input` and compare them to `real_pred` in `self.loss_funcD`."
@@ -71,13 +79,13 @@ class GANGPLoss(CustomGANLoss):
 
     def _gradient_penalty(self, real, fake):
         # A different random value of epsilon for any element of a batch
-        epsilon_vec = torch.rand(real.shape[0], 1, 1, 1, dtype=torch.float, device=real.device, requires_grad=False)
-        epsilon = epsilon_vec.expand_as(real)
+        # epsilon_vec = torch.rand(real.shape[0], 1, 1, 1, dtype=torch.float, device=real.device, requires_grad=False)
+        # epsilon = epsilon_vec.expand_as(real)
+        epsilon = self.epsilon_sampler(real, fake)
         x_hat = epsilon * real + (1 - epsilon) * fake
         x_hat_pred = self.gan_model.critic(x_hat)
 
         grads = torch.autograd.grad(outputs=x_hat_pred, inputs=x_hat, create_graph=True)[0]
-
         return self.plambda * ((grads.norm() - 1)**2)
 
 
