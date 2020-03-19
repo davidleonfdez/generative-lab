@@ -1,18 +1,24 @@
 from abc import ABC, abstractmethod
-from typing import Any, Callable, List, Tuple
+from typing import Any, Callable, List, Tuple, Union
 import torch
 from fastai.core import is_listy
 from enum import Enum
 
 
-__all__ = ['ListsInequalityType', 'is_listy_or_tensor_array', 'ProgressTracker', 'PrinterProgressTracker', 
-           'ListComparisonResult', 'compare_tensor_lists', 'compare_std_lists', 'Probability', 'SingleProbability', 
-           'RandomProbability']
+__all__ = ['compare_std_lists', 'compare_tensor_lists', 'dict_diff', 'get_diff_method', 'is_listy_or_tensor_array', 
+           'list_diff', 'ListDictDiffResult', 'ListsDiffType', 'PrinterProgressTracker', 'Probability', 
+           'ProgressTracker', 'RandomProbability', 'SingleProbability', 'TensorListComparisonResult']
 
 
-class ListsInequalityType(Enum):
+class ListsDiffType(Enum):
     LEN = 1
     TYPE_ASYM = 2
+    VALUE = 3
+
+
+class DictDiffType(Enum):
+    MISSING_KEY = 1
+    TYPE = 2
     VALUE = 3
 
 
@@ -34,10 +40,10 @@ class PrinterProgressTracker(ProgressTracker):
         print(message)
 
 
-ListComparisonResult = List[Tuple[ListsInequalityType, List[int], Any, Any]]
+TensorListComparisonResult = List[Tuple[ListsDiffType, List[int], Any, Any]]
 
 
-def compare_tensor_lists(l1, l2, progress_tracker:ProgressTracker) -> ListComparisonResult:
+def compare_tensor_lists(l1, l2, progress_tracker:ProgressTracker) -> TensorListComparisonResult:
     """Returns the inequality type and indexes where the input lists differ. 
     
     Assumes l1 and l2 are listy, contain tensors and the leaf values can be
@@ -58,7 +64,7 @@ def compare_tensor_lists(l1, l2, progress_tracker:ProgressTracker) -> ListCompar
                                     lambda a, b: a.item() == b.item())
   
 
-def compare_std_lists(l1, l2, progress_tracker:ProgressTracker) -> ListComparisonResult:
+def compare_std_lists(l1, l2, progress_tracker:ProgressTracker) -> TensorListComparisonResult:
     """Returns the inequality type and indexes where the input lists differ. 
     
     Assumes l1 and l2 are built-in Python lists and the leaf values will be compared 
@@ -73,15 +79,15 @@ def compare_std_lists(l1, l2, progress_tracker:ProgressTracker) -> ListCompariso
             [[2, 3], [1, 2], [3]], 
             PrinterProgressTracker())
         Returns:
-            [(<ListsInequalityType.VALUE: 3>, [0, 1], 4, 3),
-             (<ListsInequalityType.LEN: 1>, [1], 1, 2)]
+            [(<ListsDiffType.VALUE: 3>, [0, 1], 4, 3),
+             (<ListsDiffType.LEN: 1>, [1], 1, 2)]
     """
     return compare_lists_recursive(l1, l2, progress_tracker, [], lambda l, i: l[i], 
                                    lambda a, b: a == b)
 
 
 def compare_lists_recursive(l1, l2, progress_tracker:ProgressTracker, indexes:List[int], list_accesor:Callable, 
-                            are_equal:Callable) -> ListComparisonResult:
+                            are_equal:Callable) -> TensorListComparisonResult:
     """Returns the inequality type and indexes where the input lists differ. 
 
     Assumes l1 and l2 are listy. The leaf items are the ones directly compared, by
@@ -113,11 +119,11 @@ def compare_lists_recursive(l1, l2, progress_tracker:ProgressTracker, indexes:Li
             lambda l, i: l[i], 
             lambda a, b: a == b)
         Returns:
-            [(<ListsInequalityType.VALUE: 3>, [0, 1], 4, 3),
-             (<ListsInequalityType.LEN: 1>, [1], 1, 2)]
+            [(<ListsDiffType.VALUE: 3>, [0, 1], 4, 3),
+             (<ListsDiffType.LEN: 1>, [1], 1, 2)]
     """
     if len(l1) != len(l2):
-        return [(ListsInequalityType.LEN, indexes.copy(), len(l1), len(l2))]
+        return [(ListsDiffType.LEN, indexes.copy(), len(l1), len(l2))]
     is_top_level = indexes==[]
     result = []
     for i in range(len(l1)):
@@ -132,12 +138,65 @@ def compare_lists_recursive(l1, l2, progress_tracker:ProgressTracker, indexes:Li
         elif is_listy_or_tensor_array(l1_i) or is_listy_or_tensor_array(l2_i):
             # Creating a copy of indexes implicitly with + is needed here, in order to get
             # the current (and not the last) state of indexes to appear in this tuple.
-            result.append((ListsInequalityType.TYPE_ASYM, indexes + [i], type(l1_i), type(l2_i)))
+            result.append((ListsDiffType.TYPE_ASYM, indexes + [i], type(l1_i), type(l2_i)))
         elif (not are_equal(l1_i, l2_i)):
             # Creating a copy of indexes implicitly with + is needed here, in order to get
             # the current (and not the last) state of indexes to appear in this tuple.
-            result.append((ListsInequalityType.VALUE, indexes + [i], l1_i, l2_i))
+            result.append((ListsDiffType.VALUE, indexes + [i], l1_i, l2_i))
     return result
+
+
+ListDictDiffResult = List[Tuple[Union[ListsDiffType,DictDiffType], List, str, Any, Any]]
+
+
+def dict_diff(d1, d2, parent_keys) -> ListDictDiffResult:
+    """Performs deep comparison of two dictionaries, which may contain lists.
+    
+    Assumes the leaf values are comparable with !=.
+    """
+    result = []
+    if not isinstance(d1, dict) or not isinstance(d2, dict): 
+        return [(DictDiffType.TYPE, parent_keys, f'Type mismatch', type(d1), type(d2))]
+
+    for k in d1:
+        if k not in d2:
+            result.append((DictDiffType.MISSING_KEY, parent_keys, 'Key not in d2', k, None))
+        elif d1[k] != d2[k]:
+            diff_method = get_diff_method(d1[k], d2[k])
+            if diff_method is not None: 
+                result.extend(diff_method(d1[k], d2[k], parent_keys + [k]))
+            else: 
+                result.append((DictDiffType.VALUE, parent_keys + [k], f'Different value', d1[k], d2[k]))
+
+    result.extend((DictDiffType.MISSING_KEY, parent_keys, 'Key not in d1', None, k) 
+                  for k in d2 if k not in d1)
+    return result
+
+
+def list_diff(l1, l2, parent_indexes) -> ListDictDiffResult:
+    """Performs deep comparison of two lists, which may contain dictionaries.
+    
+    Assumes the leaf values are comparable with !=.
+    """
+    result = []
+    if not isinstance(l1, list) or not isinstance(l2, list): 
+        return [(ListsDiffType.TYPE_ASYM, parent_indexes, f'Type mismatch', type(l1), type(l2))]
+    if len(l1) != len(l2):
+        return [(ListsDiffType.LEN, parent_indexes, f'Lists length diff', len(l1), len(l2))]
+    for i,l1_i in enumerate(l1):
+        if l1_i != l2[i]:
+            diff_method = get_diff_method(l1_i, l2[i])
+            if diff_method is None: 
+                result.append((ListsDiffType.VALUE, parent_indexes + [i], f'Different value', l1[i], l2[i]))
+            else:
+                result.extend(diff_method(l1_i, l2[i], parent_indexes + [i]))
+    return result
+
+
+def get_diff_method(obj1, obj2):
+    if isinstance(obj1, dict) or isinstance(obj2, dict): return dict_diff
+    if isinstance(obj1, list) or isinstance(obj2, list): return list_diff
+    return None
 
 
 def conv_out_size(in_size:int, ks:int, stride:int, padding:int) -> int:

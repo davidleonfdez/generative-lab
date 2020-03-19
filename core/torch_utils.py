@@ -1,17 +1,39 @@
 import more_itertools
-from typing import Callable, List, Tuple, Type, Union
+from typing import Callable, Iterator, List, Tuple, Type, Union
 import torch.nn as nn
 from fastai.core import is_listy
 from fastai.torch_core import requires_grad
 
 
-__all__ = ['count_layers', 'freeze_bn_layers', 'freeze_dropout_layers', 'freeze_layers_if_condition', 
-           'freeze_layers_of_types', 'get_first_index_of_layer', 'get_first_layer', 'get_first_layer_with_ind', 
-           'get_last_layer', 'get_layers', 'get_layers_with_ind', 'get_relu',  'model_contains_layer']
+__all__ = ['are_all_frozen', 'count_layers', 'freeze_bn_layers', 'freeze_dropout_layers', 
+           'freeze_layers_if_condition', 'freeze_layers_of_types', 'get_first_index_of_layer', 
+           'get_first_layer', 'get_first_layer_with_ind', 'get_last_layer', 'get_layers', 
+           'get_layers_with_ind', 'get_relu', 'is_any_frozen', 'model_contains_layer']
 
 
 def get_relu(leaky:float=None) -> Union[nn.ReLU, nn.LeakyReLU]:
     return nn.ReLU() if leaky is None else nn.LeakyReLU(leaky)
+
+
+def _not_requires_grad_iterator(model:Union[nn.Module, List[nn.Module]]) -> Iterator[bool]:
+    if not is_listy(model): model = [model]
+    return (not p.requires_grad for module in model for p in module.parameters())
+
+
+def is_any_frozen(model:Union[nn.Module, List[nn.Module]]) -> bool:
+    """Checks, with a recursive search, if at least one param of the model(s) is frozen.
+    
+    Returns False also for empty models or models with no trainable layers (so no params).
+    """
+    return any(_not_requires_grad_iterator(model))
+
+
+def are_all_frozen(model: nn.Module) -> bool:
+    """Checks, with a recursive search, if all params of the model(s) are frozen
+    
+    Returns True also for empty models or models with no trainable layers (so no params).
+    """
+    return all(_not_requires_grad_iterator(model))
 
 
 def freeze_layers_if_condition(model:nn.Module, condition:Callable[[nn.Module], bool]):
@@ -26,7 +48,7 @@ def freeze_layers_of_types(model:nn.Module, layer_types):
 
 
 def freeze_dropout_layers(model:nn.Module):
-    freeze_layers_of_types(model, nn.Dropout)
+    freeze_layers_of_types(model, [nn.Dropout, nn.Dropout2d, nn.Dropout3d])
 
 
 def freeze_bn_layers(model:nn.Module):
