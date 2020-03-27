@@ -105,6 +105,20 @@ class CustomGANTrainer(GANTrainer):
         self.last_real = last_target if not self.gen_mode else None
         return super().on_batch_begin(last_input, last_target, **kwargs)
 
+    # Overridden just for bug fix in data.denorm() call
+    def on_epoch_end(self, pbar, epoch, last_metrics, **kwargs):
+        "Put the various losses in the recorder and show a sample image."
+        if not hasattr(self, 'last_gen') or not self.show_img: return
+        data = self.learn.data
+        img = self.last_gen[0]
+        norm = getattr(data,'norm',False)
+        if norm and norm.keywords.get('do_y',False): img = data.denorm(img, do_x=True)
+        img = data.train_ds.y.reconstruct(img)
+        self.imgs.append(img)
+        self.titles.append(f'Epoch {epoch}')
+        pbar.show_imgs(self.imgs, self.titles)
+        return add_metrics(last_metrics, [getattr(self.smoothenerG,'smooth',None),getattr(self.smoothenerC,'smooth',None)])
+
     def load_opts_from_state_dict(self, state:dict):
         layer_groups_gen = [nn.Sequential(*flatten_model(self.generator))]      
         layer_groups_critic = [nn.Sequential(*flatten_model(self.critic))]
