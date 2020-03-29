@@ -7,12 +7,12 @@ import torch.nn as nn
 from fastai.vision import (add_metrics, Callback, DataBunch, flatten_model, ifnone, Learner, LearnerCallback, 
                            LossFunction, NoopLoss, OptimWrapper, PathOrStr, requires_grad, SmoothenValue, 
                            WassersteinLoss)
-from fastai.vision.gan import FixedGANSwitcher, GANLearner, GANModule, GANTrainer
+from fastai.vision.gan import FixedGANSwitcher, GANLearner, GANModule, GANTrainer, NoisyItem
 from core.losses import gan_loss_from_func, gan_loss_from_func_std
 
 
 __all__ = ['GANLossArgs', 'GANGPLossArgs', 'CustomGANLoss', 'GANGPLoss', 'CustomGANTrainer', 'CustomGANLearner', 
-           'GANGPLearner', 'save_gan_learner', 'load_gan_learner', 'train_checkpoint_gan']
+           'GANGPLearner', 'GenImagesSampler', 'save_gan_learner', 'load_gan_learner', 'train_checkpoint_gan']
 
 
 # TODO: use a better implementation of a group of constants. A variable of type StateDictKeys can be
@@ -218,3 +218,16 @@ def train_checkpoint_gan(learner:Learner, n_epochs:int, initial_epoch:int, filen
         fname = f'{filename_start}{abs_epoch}ep.pth'
         save_gan_learner(learner, fname)
         print(f'Saved {fname}')
+
+
+class GenImagesSampler:
+    def __init__(self, generator:nn.Module, noise_sz:int=100):
+        self.generator = generator
+        self.noise_sz = noise_sz
+        self.generator.eval()
+
+    def generate(self, n:int, detach:bool=True) -> torch.Tensor:
+        in_t = torch.cat([NoisyItem(self.noise_sz).data[None, ...] for _ in range(n)])#.to(get_device())
+        imgs_t = self.generator(in_t)
+        if detach: imgs_t = imgs_t.detach()
+        return imgs_t

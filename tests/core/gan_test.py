@@ -33,6 +33,7 @@ class FixedOutputGenerator(nn.Module):
 
 class FakeImageList(ImageList):
     def get(self, i):
+        # Note: call to grand parent get on purpose, to skip path->img logic from ImageList
         return super(ImageList, self).get(i)
 
 
