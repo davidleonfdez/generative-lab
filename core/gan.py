@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
@@ -220,14 +221,82 @@ def train_checkpoint_gan(learner:Learner, n_epochs:int, initial_epoch:int, filen
         print(f'Saved {fname}')
 
 
-class GenImagesSampler:
+class ImagesSampler(ABC):
+    @abstractmethod
+    def get(self, n:int, detach:bool=True) -> torch.Tensor:
+        """Should return a tensor which contains `n` images (.size()[0] == n)"""
+
+
+class GenImagesSampler(ImagesSampler):
     def __init__(self, generator:nn.Module, noise_sz:int=100):
+        super().__init__()
         self.generator = generator
         self.noise_sz = noise_sz
         self.generator.eval()
 
-    def generate(self, n:int, detach:bool=True) -> torch.Tensor:
+    def get(self, n:int, detach:bool=True) -> torch.Tensor:
         in_t = torch.cat([NoisyItem(self.noise_sz).data[None, ...] for _ in range(n)])#.to(get_device())
         imgs_t = self.generator(in_t)
         if detach: imgs_t = imgs_t.detach()
         return imgs_t
+
+
+class RealImagesSampler(ImagesSampler):
+    def __init__(self, data:DataBunch, shuffle:bool=True):
+        super().__init__()
+        self.data = data
+        self.shuffle = shuffle
+        self._dataloader = None
+        self.iterator = None
+
+    def _setup_iterator(self, n:int):
+        if (self._dataloader is None) or (self._dataloader.batch_size != n):
+            self._dataloader = self.data.train_dl.new(batch_size=n, shuffle=self.shuffle)
+            #DataLoader(self.dataset, n, shuffle=True, drop_last=True))
+            self._reset_iterator()
+
+    def _reset_iterator(self):
+        self.iterator = iter(self._dataloader)
+
+    def get(self, n:int, detach:bool=True) -> torch.Tensor:
+        self._setup_iterator(n)
+        _, batch = next(self.iterator, (None,None))
+        if batch is None:
+            self._reset_iterator()
+            _, batch = next(self.iterator)
+        if detach: batch = batch.detach()
+        return batch
+
+
+class SimpleImagesSampler(ImagesSampler):
+    """Sampler that just returns `images` sequentially."""
+    def __init__(self, images:torch.Tensor):
+        self.images = images
+        self.current_index = 0
+
+    def get(self, n:int, detach:bool=True) -> torch.Tensor:
+        n_imgs = self.images.size()[0]
+        end_is_reached = self.current_index + n > n_imgs
+        if end_is_reached:
+            sub_batches = []
+            sub_batches.append(self.images[self.current_index:n_imgs])
+            n_imgs_left = n - (n_imgs - self.current_index)
+            while n_imgs_left > n_imgs:
+                sub_batches.append(self.images[0:n_imgs])
+                n_imgs_left -= n_imgs
+            sub_batches.append(self.images[0:n_imgs_left])
+            self.current_index = n_imgs_left
+            batch = torch.cat(sub_batches)
+        else:
+            batch = self.images[self.current_index:self.current_index+n]
+            self.current_index = (self.current_index + n) % n_imgs
+        if detach: batch = batch.detach()
+        return batch
+
+
+# def display_out_tensor(t, data):
+#     t = t.detach().view(img_n_channels, img_size, img_size)
+#     norm = getattr(data,'norm',False)
+#     if norm and norm.keywords.get('do_y',False): t = data.denorm(t, do_x=True)
+#     #img = data.train_ds.y.reconstruct(t)
+#     plt.imshow(t.permute(1, 2, 0).numpy())

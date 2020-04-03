@@ -19,9 +19,9 @@ def AvgFlatten() -> nn.Module:
 
 
 def upsample_layer(ni:int, nf:int, scale_factor=2, upsample_mode='bilinear', ks:int=3, stride:int=1, 
-               padding:int=1, bias:Optional[bool]=None, norm_type:Optional[NormType]=NormType.Batch, 
-               use_activ:bool=True, leaky:Optional[float]=None, init:Callable=nn.init.kaiming_normal_, 
-               self_attention:bool=False) -> nn.Module:
+                   padding:int=1, bias:Optional[bool]=None, norm_type:Optional[NormType]=NormType.Batch, 
+                   use_activ:bool=True, leaky:Optional[float]=None, init:Callable=nn.init.kaiming_normal_, 
+                   self_attention:bool=False) -> nn.Module:
     "Create a sequence of upsample by interpolation, conv (`ni` to `nf`), ReLU (if `use_activ`) and BN (if `bn`) layers."
     bn = norm_type in (NormType.Batch, NormType.BatchZero)
     if bias is None: bias = not bn

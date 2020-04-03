@@ -5,10 +5,11 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset
 from fastai.data_block import DataBunch
 from fastai.vision.gan import (basic_critic, basic_generator, GANItemList, GANModule, Lambda, ImageList, 
-                               noop, NoopLoss, WassersteinLoss)
+                               NoopLoss, WassersteinLoss)
 from core.gan import (CustomGANLoss, CustomGANTrainer, CustomGANLearner, GANGPLearner, GANGPLoss, 
-                      GANGPLossArgs, GANLossArgs)
+                      GANGPLossArgs, GANLossArgs, RealImagesSampler)
 from core.losses import gan_loss_from_func_std
+from testing_fakes import get_fake_gan_data
 
 
 class CuadraticFuncCritic(nn.Module):
@@ -29,21 +30,6 @@ class FixedOutputGenerator(nn.Module):
 
     def forward(self, *args):
         return self.output
-
-
-class FakeImageList(ImageList):
-    def get(self, i):
-        # Note: call to grand parent get on purpose, to skip path->img logic from ImageList
-        return super(ImageList, self).get(i)
-
-
-class FakeGANItemList(GANItemList):
-    _label_cls = FakeImageList
-
-
-def get_fake_gan_data(n_channels:int, in_size:int, noise_sz:int=3, ds_size:int=4, bs:int=2) -> GANItemList:
-    items = [torch.rand(n_channels, in_size, in_size) for i in range(ds_size)]
-    return FakeGANItemList(items, noise_sz).split_none().label_from_func(noop).databunch(bs=bs)
 
 
 class TestCustomGANLoss:
@@ -259,3 +245,36 @@ class TestGANGPLearner:
         assert isinstance(learner.loss_func, GANGPLoss)
         assert isinstance(learner.loss_func.loss_funcG, NoopLoss)
         assert isinstance(learner.loss_func.loss_funcC, WassersteinLoss)
+
+
+class TestRealImagesSampler:
+    N_CHANNELS, IMG_SIZE = 3, 16
+    DS_SIZE = 7
+
+    def _create_sampler(self):
+        data = get_fake_gan_data(self.N_CHANNELS, self.IMG_SIZE, ds_size=self.DS_SIZE, bs=2)
+        return RealImagesSampler(data)        
+
+    def test_loop(self):
+        sampler = self._create_sampler()
+        n_imgs = 3
+        imgs = sampler.get(n_imgs)
+        it1 = sampler.iterator
+        imgs2 = sampler.get(n_imgs)
+        it2 = sampler.iterator
+        imgs3 = sampler.get(n_imgs)
+        it3 = sampler.iterator
+        assert imgs.size() == torch.Size([n_imgs, self.N_CHANNELS, self.IMG_SIZE, self.IMG_SIZE])
+        assert imgs2.size() == imgs.size()
+        assert imgs3.size() == imgs.size()
+        assert id(it1) == id(it2)
+        assert id(it3) != id(it2)
+
+    def test_size_change(self):
+        sampler = self._create_sampler()
+        n_imgs = 3
+        imgs = sampler.get(n_imgs)
+        n_imgs2 = 5
+        imgs2 = sampler.get(n_imgs2)
+        assert imgs.size() == torch.Size([n_imgs, self.N_CHANNELS, self.IMG_SIZE, self.IMG_SIZE])
+        assert imgs2.size() == torch.Size([n_imgs2, self.N_CHANNELS, self.IMG_SIZE, self.IMG_SIZE])

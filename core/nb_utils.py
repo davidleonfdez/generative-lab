@@ -1,7 +1,9 @@
 import importlib
+from IPython.display import FileLink
 
 
-__all__ = ['mount_gdrive']
+__all__ = ['mount_gdrive', 'output_file_link']
+
 
 def mount_gdrive() -> str:
     """Mount Google Drive storage of the current Google account and return the root path.
@@ -16,3 +18,7 @@ def mount_gdrive() -> str:
     root_dir = "/content/gdrive/My Drive/"
     
     return root_dir
+
+
+def output_file_link(path:str):  
+    FileLink(path)
