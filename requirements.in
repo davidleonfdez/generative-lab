@@ -2,6 +2,7 @@
 torch
 torchvision
 fastai
+scipy
 jupyter
 notebook
 jupyter_contrib_nbextensions
