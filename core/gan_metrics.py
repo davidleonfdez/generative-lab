@@ -49,10 +49,9 @@ class InceptionScoreCalculator:
         eps = 1e-8
         for i in range(n_groups):
             in_group = gen_imgs_sampler.get(n_imgs_by_group)
-            if in_group.size()[2] < INCEPTION_V3_MIN_SIZE or in_group.size()[3] < INCEPTION_V3_MIN_SIZE: 
-                in_group = F.upsample(in_group, size=INCEPTION_V3_MIN_SIZE)
+            inception_in = _prepare_inception_v3_input(in_group)
             # p(y/x)
-            preds = F.softmax(self.inception_net(in_group), dim=1)
+            preds = F.softmax(self.inception_net(inception_in), dim=1)
             # p(y)
             avg_preds_by_cat = preds.mean(dim=0)
             # Reduce with sum (over classes) to get one value per image
@@ -100,6 +99,7 @@ class FIDCalculator:
             cov_mean = sqrtm(cov_real.dot(cov_fake))
             if np.iscomplexobj(cov_mean): cov_mean = cov_mean.real
             cov_term = (cov_real + cov_fake - 2 * cov_mean).trace()
+
             fid = sqr_diff + cov_term
             split_fids.append(fid)
         fids_t = torch.Tensor(split_fids)

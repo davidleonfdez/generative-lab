@@ -24,6 +24,19 @@ class FixedPredsInceptionNet(nn.Module):
         return self.fake_preds[self.current_pred]
 
 
+class FakeInceptionNet(nn.Module):
+    def __init__(self, n_classes:int=1000):
+        super().__init__()
+        self.fc = nn.Linear(2048, n_classes)
+        self.conv_filters = torch.ones(2048, )
+
+    def forward(self, x):
+        x = F.conv2d(x, weight=torch.ones(2048, x.size()[1], 3, 3), padding=1)
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        x = torch.flatten(x, 1)
+        return self.fc(x)
+
+
 class TestInceptionScoreCalculator:
     @pytest.mark.parametrize("preds, expected_mean, expected_std", [
         # Preds are logits, so 999 ~ 1, -999 ~ 0
@@ -46,45 +59,23 @@ class TestInceptionScoreCalculator:
         assert math.isclose(mean.item(), expected_mean, abs_tol=1e-4)
 
 
-class FakeInceptionNet(nn.Module):
-    def __init__(self, n_classes:int=1000):
-        super().__init__()
-        self.fc = nn.Linear(2048, n_classes)
-        self.conv_filters = torch.ones(2048, )
-
-    def forward(self, x):
-        x = F.conv2d(x, weight=torch.ones(2048, x.size()[1], 3, 3), padding=1)
-        x = F.adaptive_avg_pool2d(x, (1, 1))
-        x = torch.flatten(x, 1)
-        return self.fc(x)
-
-
 class TestFIDCalculator:
-    def _test_equal_sets(self, use_fake_inception:bool):
+    def _test_equal_sets(self, inception_net:nn.Module):
         bs, n_channels, img_size = 4, 3, 16
         generator = basic_generator(img_size, n_channels)
         n_imgs = 20
         imgs = torch.rand(n_imgs, n_channels, img_size, img_size)
-
         gen_imgs_sampler = SimpleImagesSampler(imgs)
         real_images_sampler = SimpleImagesSampler(imgs)
-        calculator = FIDCalculator(FakeInceptionNet()) if use_fake_inception else FIDCalculator()
+        calculator = FIDCalculator(inception_net)
 
         std, mean_fid = calculator.calculate(gen_imgs_sampler, real_images_sampler, n_imgs, bs)
-        print(std, mean_fid)
+
         assert math.isclose(std.item(), 0., abs_tol=0.01)
         assert math.isclose(mean_fid.item(), 0., abs_tol=0.01)
         # Check inception net is unchanged
         assert isinstance(calculator.inception_net.fc, nn.Linear)
 
-    # @pytest.mark.slow
-    # def test_equal_sets_real_inception(self):
-    #     self._test_equal_sets(False)
-
-    def test_equal_sets_fake_inception(self):
-        self._test_equal_sets(True)
-
-    #@pytest.mark.slow
     def _test_increase_with_noise(self, real_imgs, inception_net:nn.Module):
         n_imgs = real_imgs.size()[0]
         bs = n_imgs // 2
@@ -100,22 +91,28 @@ class TestFIDCalculator:
             calculator = FIDCalculator(inception_net)
             _, fid = calculator.calculate(gen_imgs_sampler, real_images_sampler, n_imgs, bs)
             fids.append(fid)
-        print(fids)
 
         assert fids[0] < fids[1] < fids[2]
 
-    # @pytest.mark.slow
-    # def test_increase_with_noise(self, mnist_tiny_image_list, pretrained_inception_v3):
-    #     # Test passing real dataset and pretrained inception net
-    #     n_imgs = 8
-    #     real_imgs = torch.cat([img.px[None, ...] for img in mnist_tiny_image_list[:n_imgs]])
-    #     # Expand from [0, 1] to [-1, 1]
-    #     real_imgs = real_imgs * 2 - 1
-    #     self._test_increase_with_noise(real_imgs, pretrained_inception_v3)
+    def test_equal_sets_fake_inception(self):
+        self._test_equal_sets(FakeInceptionNet())
 
-    #@pytest.mark.slow
+    @pytest.mark.slow
+    def test_equal_sets_real_inception(self, pretrained_inception_v3:nn.Module):
+        self._test_equal_sets(pretrained_inception_v3)
+
+    @pytest.mark.slow
     def test_increase_with_noise_fake(self):
         # Test passing fake data and fake inception net
         n_imgs = 8
         real_imgs = torch.empty(n_imgs, 3, 16, 16).uniform_(-1, 1)
         self._test_increase_with_noise(real_imgs, FakeInceptionNet())
+
+    @pytest.mark.xslow
+    def test_increase_with_noise(self, mnist_tiny_image_list, pretrained_inception_v3):
+        # Test passing real dataset and pretrained inception net
+        n_imgs = 8
+        real_imgs = torch.cat([img.px[None, ...] for img in mnist_tiny_image_list[:n_imgs]])
+        # Expand from [0, 1] to [-1, 1]
+        real_imgs = real_imgs * 2 - 1
+        self._test_increase_with_noise(real_imgs, pretrained_inception_v3)

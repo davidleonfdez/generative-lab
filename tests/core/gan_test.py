@@ -139,6 +139,7 @@ class TestGANTrainer:
 
         assert trainer.last_real is None
 
+    @pytest.mark.slow
     def test_integration_state_management(self):
         n_channels, in_size = 1, 8
         noise_sz = 3       
