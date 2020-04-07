@@ -5,9 +5,9 @@ from functools import partial
 from typing import Callable, Optional, Tuple, Union
 import torch
 import torch.nn as nn
-from fastai.vision import (add_metrics, Callback, DataBunch, flatten_model, ifnone, Learner, LearnerCallback, 
-                           LossFunction, NoopLoss, OptimWrapper, PathOrStr, requires_grad, SmoothenValue, 
-                           WassersteinLoss)
+from fastai.vision import (add_metrics, Callback, DataBunch, denormalize, flatten_model, ifnone, Image, Learner, 
+                           LearnerCallback, LossFunction, NoopLoss, OptimWrapper, PathOrStr, requires_grad, 
+                           SmoothenValue, WassersteinLoss)
 from fastai.vision.gan import FixedGANSwitcher, GANLearner, GANModule, GANTrainer, NoisyItem
 from core.losses import gan_loss_from_func, gan_loss_from_func_std
 
@@ -228,6 +228,7 @@ class ImagesSampler(ABC):
 
 
 class GenImagesSampler(ImagesSampler):
+    """Generates batches of images using a trained nn."""
     def __init__(self, generator:nn.Module, noise_sz:int=100):
         super().__init__()
         self.generator = generator
@@ -242,6 +243,7 @@ class GenImagesSampler(ImagesSampler):
 
 
 class RealImagesSampler(ImagesSampler):
+    """Provides a batch of images from a `DataBunch`."""
     def __init__(self, data:DataBunch, shuffle:bool=True):
         super().__init__()
         self.data = data
@@ -294,9 +296,24 @@ class SimpleImagesSampler(ImagesSampler):
         return batch
 
 
-# def display_out_tensor(t, data):
-#     t = t.detach().view(img_n_channels, img_size, img_size)
-#     norm = getattr(data,'norm',False)
-#     if norm and norm.keywords.get('do_y',False): t = data.denorm(t, do_x=True)
-#     #img = data.train_ds.y.reconstruct(t)
-#     plt.imshow(t.permute(1, 2, 0).numpy())
+class GANOutToImgConverter:
+    def __init__(self, denorm_method:Callable[[torch.Tensor], torch.Tensor]=None):
+        self.denorm_method = denorm_method
+
+    def convert(self, t:torch.Tensor) -> Image:
+        t = t.detach().cpu()
+        if self.denorm_method is not None: t = self.denorm_method(t)
+        return Image(t.float().clamp(0, 1))
+
+    @classmethod
+    def from_stats(cls, mean_denorm:torch.FloatTensor, std_denorm:torch.FloatTensor):
+        if mean_denorm is not None and std_denorm is not None:
+            denorm_method = partial(denormalize, mean=mean_denorm, std=std_denorm, do_x=True)
+        return cls(denorm_method)
+
+    @classmethod
+    def from_data(cls, data:DataBunch):
+        denorm_method = None
+        norm = getattr(data,'norm',False)
+        if norm and norm.keywords.get('do_y',False): denorm_method = partial(data.denorm, do_x=True)
+        return cls(denorm_method)

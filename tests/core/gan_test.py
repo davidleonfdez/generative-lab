@@ -4,12 +4,13 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
 from fastai.data_block import DataBunch
+from fastai.vision import Image
 from fastai.vision.gan import (basic_critic, basic_generator, GANItemList, GANModule, Lambda, ImageList, 
                                NoopLoss, WassersteinLoss)
 from core.gan import (CustomGANLoss, CustomGANTrainer, CustomGANLearner, GANGPLearner, GANGPLoss, 
-                      GANGPLossArgs, GANLossArgs, RealImagesSampler)
+                      GANGPLossArgs, GANLossArgs, GANOutToImgConverter, RealImagesSampler)
 from core.losses import gan_loss_from_func_std
-from testing_fakes import get_fake_gan_data
+from testing_fakes import get_fake_gan_data, get_fake_gan_data_from_items
 
 
 class CuadraticFuncCritic(nn.Module):
@@ -279,3 +280,34 @@ class TestRealImagesSampler:
         imgs2 = sampler.get(n_imgs2)
         assert imgs.size() == torch.Size([n_imgs, self.N_CHANNELS, self.IMG_SIZE, self.IMG_SIZE])
         assert imgs2.size() == torch.Size([n_imgs2, self.N_CHANNELS, self.IMG_SIZE, self.IMG_SIZE])
+
+
+class TestGANOutToImgConverter:
+    def _assert_common(self, converter):
+        # 3x2x2
+        in_t = torch.Tensor([
+          [[1., 1.], [0., 0.]],
+          [[1., -1.], [0., 2.]],
+          [[-1., -1.], [0.5, -0.5]]
+        ])
+        expected_out_px = torch.Tensor([
+          [[1., 1.], [0.5, 0.5]],
+          [[1., 0.], [0.5, 1.]],
+          [[0., 0.], [0.75, 0.25]]
+        ])
+
+        out_img = converter.convert(in_t)
+        
+        assert isinstance(out_img, Image)
+        assert torch.equal(out_img.px, expected_out_px)        
+
+    def test_from_stats(self):
+        converter = GANOutToImgConverter.from_stats(torch.Tensor([0.5]*3), torch.Tensor([0.5]*3))
+        self._assert_common(converter)
+
+    def test_from_data(self):
+        data = get_fake_gan_data(3, 2, ds_size=4, bs=2, norm_stats=[
+          torch.Tensor([0.5]*3), torch.Tensor([0.5]*3)
+        ])
+        converter = GANOutToImgConverter.from_data(data)
+        self._assert_common(converter)
