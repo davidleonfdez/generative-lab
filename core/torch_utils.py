@@ -1,14 +1,16 @@
 import more_itertools
 from typing import Callable, Iterator, List, Tuple, Type, Union
+import torch
 import torch.nn as nn
 from fastai.core import is_listy
 from fastai.torch_core import requires_grad
 
 
 __all__ = ['are_all_frozen', 'count_layers', 'freeze_bn_layers', 'freeze_dropout_layers', 
-           'freeze_layers_if_condition', 'freeze_layers_of_types', 'get_first_index_of_layer', 
-           'get_first_layer', 'get_first_layer_with_ind', 'get_last_layer', 'get_layers', 
-           'get_layers_with_ind', 'get_relu', 'is_any_frozen', 'model_contains_layer']
+           'freeze_layers_if_condition', 'freeze_layers_of_types', 'get_device_from_module',
+           'get_first_index_of_layer', 'get_first_layer', 'get_first_layer_with_ind', 
+           'get_last_layer', 'get_layers', 'get_layers_with_ind', 'get_relu', 'is_any_frozen', 
+           'model_contains_layer']
 
 
 def get_relu(leaky:float=None) -> Union[nn.ReLU, nn.LeakyReLU]:
@@ -90,3 +92,10 @@ def get_last_layer(flattened_model:List[nn.Module], layer_type:Type[nn.Module]) 
         if isinstance(flattened_model[i], layer_type):
             return flattened_model[i]
     return None
+
+
+def get_device_from_module(net:nn.Module) -> torch.device:
+    net_param = next(net.parameters(), None)
+    if net_param is not None: return net_param.device
+    if torch.cuda.is_available(): return torch.device('cuda')
+    return torch.device('cpu')

@@ -10,10 +10,12 @@ from fastai.vision import (add_metrics, Callback, DataBunch, denormalize, flatte
                            SmoothenValue, WassersteinLoss)
 from fastai.vision.gan import FixedGANSwitcher, GANLearner, GANModule, GANTrainer, NoisyItem
 from core.losses import gan_loss_from_func, gan_loss_from_func_std
+from core.torch_utils import get_device_from_module
 
 
 __all__ = ['GANLossArgs', 'GANGPLossArgs', 'CustomGANLoss', 'GANGPLoss', 'CustomGANTrainer', 'CustomGANLearner', 
-           'GANGPLearner', 'GenImagesSampler', 'save_gan_learner', 'load_gan_learner', 'train_checkpoint_gan']
+           'GANGPLearner', 'GenImagesSampler', 'load_gan_generator', 'load_gan_learner', 'train_checkpoint_gan', 
+           'save_gan_learner',]
 
 
 # TODO: use a better implementation of a group of constants. A variable of type StateDictKeys can be
@@ -205,6 +207,14 @@ def load_gan_learner(learner:CustomGANLearner, path:PathOrStr):
         learner.gan_trainer.load_opts_from_state_dict(state_dict[StateDictKeys.OPT.value])
 
 
+def load_gan_generator(generator:nn.Module, path:PathOrStr):
+    """Loads the weights of a generator from a .pth file created with `save_gan_learner()`.
+    
+    It allows the use of `generator` for inference without the need to first load a dataset and a learner."""
+    state_dict = torch.load(path)
+    generator.load_state_dict(state_dict[StateDictKeys.GENERATOR.value])
+
+
 def train_checkpoint_gan(learner:Learner, n_epochs:int, initial_epoch:int, filename_start:str, 
                          lr:float=2e-4, n_epochs_save_split:int=50, show_image:bool=False):
     # Relative epoch, without adding initial_epoch
@@ -236,7 +246,8 @@ class GenImagesSampler(ImagesSampler):
         self.generator.eval()
 
     def get(self, n:int, detach:bool=True) -> torch.Tensor:
-        in_t = torch.cat([NoisyItem(self.noise_sz).data[None, ...] for _ in range(n)])#.to(get_device())
+        in_t = torch.cat([NoisyItem(self.noise_sz).data[None, ...] for _ in range(n)])
+        in_t = in_t.to(get_device_from_module(self.generator))
         imgs_t = self.generator(in_t)
         if detach: imgs_t = imgs_t.detach()
         return imgs_t
