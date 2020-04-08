@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from torchvision.models.inception import inception_v3
 from fastai.vision import ifnone
 from core.gan import ImagesSampler
+from core.torch_utils import get_device_from_module
 
 
 __all__ = ['FIDCalculator', 'InceptionScoreCalculator', 'INCEPTION_V3_MIN_SIZE']
@@ -41,7 +42,7 @@ class InceptionScoreCalculator:
         
         The images provided by gen_imgs_sampler must be already normalized to the range [-1, 1].
         """
-        assert n_total_imgs > n_imgs_by_group, 'n_total_imgs must be greater than n_imgs_by_group' 
+        assert n_total_imgs >= n_imgs_by_group, 'n_total_imgs must not be smaller than n_imgs_by_group' 
         assert n_total_imgs % n_imgs_by_group == 0, 'n_total_imgs must be divisible by n_imgs_by_group'
         n_groups = n_total_imgs // n_imgs_by_group
         scores = []
@@ -51,7 +52,8 @@ class InceptionScoreCalculator:
             in_group = gen_imgs_sampler.get(n_imgs_by_group)
             inception_in = _prepare_inception_v3_input(in_group)
             # p(y/x)
-            preds = F.softmax(self.inception_net(inception_in), dim=1)
+            with torch.no_grad():
+                preds = F.softmax(self.inception_net(inception_in), dim=1)
             # p(y)
             avg_preds_by_cat = preds.mean(dim=0)
             # Reduce with sum (over classes) to get one value per image
@@ -68,11 +70,13 @@ class FIDCalculator:
         self.inception_net.eval()
 
     def _get_inception_ftrs(self, imgs:torch.Tensor) -> torch.Tensor:
+        imgs = imgs.to(get_device_from_module(self.inception_net))
         inception_in = _prepare_inception_v3_input(imgs)
         # Temporarily remove last layer, in order to get the output of the penultimate layer
         fc = self.inception_net.fc
         self.inception_net.fc = nn.Identity()
-        out = self.inception_net(inception_in).detach()
+        with torch.no_grad():
+            out = self.inception_net(inception_in)
         self.inception_net.fc = fc
         return out
 
@@ -82,7 +86,7 @@ class FIDCalculator:
         
         The images provided by gen_imgs_sampler and real_imgs_sampler must be already normalized to the range [-1, 1].
         """
-        assert n_total_imgs > n_imgs_by_group, 'n_total_imgs must be greater than n_imgs_by_group' 
+        assert n_total_imgs >= n_imgs_by_group, 'n_total_imgs must not be smaller than n_imgs_by_group' 
         assert n_total_imgs % n_imgs_by_group == 0, 'n_total_imgs must be divisible by n_imgs_by_group'
         n_groups = n_total_imgs // n_imgs_by_group
         split_fids = []
