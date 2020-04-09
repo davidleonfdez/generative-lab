@@ -53,10 +53,10 @@ class TestInceptionScoreCalculator:
             preds)
         calculator = InceptionScoreCalculator(fake_inception_net)
 
-        std, mean = calculator.calculate(gen_imgs_sampler, 4, bs)
+        inception_score = calculator.calculate(gen_imgs_sampler, 4, bs)
 
-        assert math.isclose(std.item(), expected_std, abs_tol=1e-4)
-        assert math.isclose(mean.item(), expected_mean, abs_tol=1e-4)
+        assert math.isclose(inception_score.stdev, expected_std, abs_tol=1e-4)
+        assert math.isclose(inception_score.mean, expected_mean, abs_tol=1e-4)
 
 
 class TestFIDCalculator:
@@ -69,10 +69,10 @@ class TestFIDCalculator:
         real_images_sampler = SimpleImagesSampler(imgs)
         calculator = FIDCalculator(inception_net)
 
-        std, mean_fid = calculator.calculate(gen_imgs_sampler, real_images_sampler, n_imgs, bs)
+        fid = calculator.calculate(gen_imgs_sampler, real_images_sampler, n_imgs, bs)
 
-        assert math.isclose(std.item(), 0., abs_tol=0.01)
-        assert math.isclose(mean_fid.item(), 0., abs_tol=0.01)
+        assert math.isclose(fid.stdev, 0., abs_tol=0.01)
+        assert math.isclose(fid.mean, 0., abs_tol=0.01)
         # Check inception net is unchanged
         assert isinstance(calculator.inception_net.fc, nn.Linear)
 
@@ -89,15 +89,15 @@ class TestFIDCalculator:
             gen_imgs_sampler = SimpleImagesSampler(imgs)
             real_images_sampler = SimpleImagesSampler(real_imgs)
             calculator = FIDCalculator(inception_net)
-            _, fid = calculator.calculate(gen_imgs_sampler, real_images_sampler, n_imgs, bs)
-            fids.append(fid)
+            fid = calculator.calculate(gen_imgs_sampler, real_images_sampler, n_imgs, bs)
+            fids.append(fid.mean)
 
         assert fids[0] < fids[1] < fids[2]
 
     def test_equal_sets_fake_inception(self):
         self._test_equal_sets(FakeInceptionNet())
 
-    @pytest.mark.slow
+    @pytest.mark.xslow
     def test_equal_sets_real_inception(self, pretrained_inception_v3:nn.Module):
         self._test_equal_sets(pretrained_inception_v3)
 

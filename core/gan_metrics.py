@@ -1,16 +1,20 @@
-from typing import Callable, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 from scipy.linalg import sqrtm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models.inception import inception_v3
-from fastai.vision import ifnone
-from core.gan import ImagesSampler
-from core.torch_utils import get_device_from_module
+from fastai.vision import DataBunch, ifnone
+from core.gan import ImagesSampler, GenImagesSampler, RealImagesSampler
+from core.gen_utils import NetStateLoader, ProgressTracker
+from core.net_builders import DEFAULT_NOISE_SZ
+from core.torch_utils import get_device_from_module, get_fastest_available_device
 
 
-__all__ = ['FIDCalculator', 'InceptionScoreCalculator', 'INCEPTION_V3_MIN_SIZE']
+__all__ = ['evaluate_models_fid', 'EvaluationItem', 'EvaluationResult', 'FIDCalculator', 
+           'InceptionScoreCalculator', 'INCEPTION_V3_MIN_SIZE']
 
 
 INCEPTION_V3_MIN_SIZE = 299
@@ -20,6 +24,12 @@ def _prepare_inception_v3_input(x:torch.Tensor) -> torch.Tensor:
     if x.size()[-2] < INCEPTION_V3_MIN_SIZE or x.size()[-1] < INCEPTION_V3_MIN_SIZE: 
         return F.upsample(x, size=INCEPTION_V3_MIN_SIZE, mode='bilinear')
     return x
+
+
+@dataclass
+class EvaluationResult:
+    mean:float
+    stdev:float
 
 
 class InceptionScoreCalculator:
@@ -37,7 +47,7 @@ class InceptionScoreCalculator:
         self.inception_net.eval()
 
     def calculate(self, gen_imgs_sampler:ImagesSampler, n_total_imgs=50000, 
-                  n_imgs_by_group=500) -> Tuple[torch.Tensor, torch.Tensor]:
+                  n_imgs_by_group=500) -> EvaluationResult:
         """Returns a tuple with stdev and mean of the inception score calculated for each group of `n_imgs_by_group`.
         
         The images provided by gen_imgs_sampler must be already normalized to the range [-1, 1].
@@ -60,7 +70,8 @@ class InceptionScoreCalculator:
             kl_div = (preds * ((preds + eps).log() - (avg_preds_by_cat + eps).log())).sum(dim=1)
             scores.append(kl_div.mean().exp())
         scores_t = torch.Tensor(scores)
-        return torch.std_mean(scores_t)
+        iscore_std_mean = torch.std_mean(scores_t)
+        return EvaluationResult(mean=iscore_std_mean[1].item(), stdev=iscore_std_mean[0].item())
 
 
 class FIDCalculator:
@@ -81,7 +92,7 @@ class FIDCalculator:
         return out
 
     def calculate(self, gen_imgs_sampler:ImagesSampler, real_imgs_sampler:ImagesSampler, n_total_imgs=50000, 
-                  n_imgs_by_group=500) -> Tuple[torch.Tensor, torch.Tensor]:
+                  n_imgs_by_group=500) -> EvaluationResult:
         """Returns stdev and mean of the FID between groups of images provided by `gen_imgs_sampler` and `real_imgs_sampler`
         
         The images provided by gen_imgs_sampler and real_imgs_sampler must be already normalized to the range [-1, 1].
@@ -98,8 +109,8 @@ class FIDCalculator:
             fake_ftrs = self._get_inception_ftrs(fake_imgs)
 
             sqr_diff = ((real_ftrs.mean(dim=0) - fake_ftrs.mean(dim=0))**2).sum()
-            cov_real = np.cov(real_ftrs.numpy(), rowvar=False)
-            cov_fake = np.cov(fake_ftrs.numpy(), rowvar=False)
+            cov_real = np.cov(real_ftrs.cpu().numpy(), rowvar=False)
+            cov_fake = np.cov(fake_ftrs.cpu().numpy(), rowvar=False)
             cov_mean = sqrtm(cov_real.dot(cov_fake))
             if np.iscomplexobj(cov_mean): cov_mean = cov_mean.real
             cov_term = (cov_real + cov_fake - 2 * cov_mean).trace()
@@ -107,4 +118,38 @@ class FIDCalculator:
             fid = sqr_diff + cov_term
             split_fids.append(fid)
         fids_t = torch.Tensor(split_fids)
-        return torch.std_mean(fids_t)
+        fid_std_mean = torch.std_mean(fids_t)
+        return EvaluationResult(mean=fid_std_mean[1].item(), stdev=fid_std_mean[0].item())
+
+
+@dataclass
+class EvaluationItem:
+    model_id:str
+    net_builder:Callable
+    net_builder_args:List
+    net_builder_kwargs:dict
+    # If needed in the future, it could be better to include `in_sz` only in a subclass,
+    # to make `EvaluationItem` more generic.
+    in_sz:int=DEFAULT_NOISE_SZ
+
+
+def evaluate_models_fid(models:List[EvaluationItem], data:DataBunch, gen_state_loader:NetStateLoader, 
+                        n_total_imgs:int=50000, n_imgs_by_group:int=500, calculator:FIDCalculator=None,
+                        progress_tracker:ProgressTracker=None) -> Dict[str, EvaluationResult]:
+    results = {}
+    if calculator is None: calculator = FIDCalculator()
+    device = get_fastest_available_device()
+
+    for m in models:
+        generator = m.net_builder(*m.net_builder_args, **m.net_builder_kwargs).to(device)
+        gen_state_loader.load(generator, m.model_id)
+        results[m.model_id] = calculator.calculate(
+            GenImagesSampler(generator, noise_sz=m.in_sz),
+            RealImagesSampler(data),
+            n_total_imgs=n_total_imgs,
+            n_imgs_by_group=n_imgs_by_group)
+        if progress_tracker is not None:
+            progress_tracker.notify(f'Completed model {m.model_id} with FID={results[m.model_id].mean}, '
+                                    f'std={results[m.model_id].stdev}')
+
+    return results

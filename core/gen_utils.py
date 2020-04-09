@@ -1,13 +1,14 @@
 from abc import ABC, abstractmethod
 from typing import Any, Callable, List, Tuple, Union
 import torch
+import torch.nn as nn
 from fastai.core import is_listy
 from enum import Enum
 
 
 __all__ = ['compare_std_lists', 'compare_tensor_lists', 'dict_diff', 'get_diff_method', 'is_listy_or_tensor_array', 
-           'list_diff', 'ListDictDiffResult', 'ListsDiffType', 'PrinterProgressTracker', 'Probability', 
-           'ProgressTracker', 'RandomProbability', 'SingleProbability', 'TensorListComparisonResult']
+           'list_diff', 'ListDictDiffResult', 'ListsDiffType', 'NetStateLoader', 'PrinterProgressTracker', 
+           'Probability', 'ProgressTracker', 'RandomProbability', 'SingleProbability', 'TensorListComparisonResult']
 
 
 class ListsDiffType(Enum):
@@ -242,3 +243,9 @@ class RandomProbability(Probability):
     @property
     def prob(self):
         return self.min_val + (torch.rand(1).item() * (self.max_val - self.min_val))
+
+
+class NetStateLoader(ABC):
+    @abstractmethod
+    def load(self, net:nn.Module, model_id:str):
+        "Loads the weights of `net`."

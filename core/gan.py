@@ -9,13 +9,14 @@ from fastai.vision import (add_metrics, Callback, DataBunch, denormalize, flatte
                            LearnerCallback, LossFunction, NoopLoss, OptimWrapper, PathOrStr, requires_grad, 
                            SmoothenValue, WassersteinLoss)
 from fastai.vision.gan import FixedGANSwitcher, GANLearner, GANModule, GANTrainer, NoisyItem
+from core.gen_utils import NetStateLoader
 from core.losses import gan_loss_from_func, gan_loss_from_func_std
 from core.torch_utils import get_device_from_module
 
 
 __all__ = ['GANLossArgs', 'GANGPLossArgs', 'CustomGANLoss', 'GANGPLoss', 'CustomGANTrainer', 'CustomGANLearner', 
-           'GANGPLearner', 'GenImagesSampler', 'load_gan_generator', 'load_gan_learner', 'train_checkpoint_gan', 
-           'save_gan_learner',]
+           'GANGPLearner', 'GeneratorFuncStateLoader', 'GenImagesSampler', 'load_gan_generator', 'load_gan_learner', 
+           'train_checkpoint_gan', 'save_gan_learner',]
 
 
 # TODO: use a better implementation of a group of constants. A variable of type StateDictKeys can be
@@ -207,11 +208,11 @@ def load_gan_learner(learner:CustomGANLearner, path:PathOrStr):
         learner.gan_trainer.load_opts_from_state_dict(state_dict[StateDictKeys.OPT.value])
 
 
-def load_gan_generator(generator:nn.Module, path:PathOrStr):
+def load_gan_generator(generator:nn.Module, path:PathOrStr, map_location=None):
     """Loads the weights of a generator from a .pth file created with `save_gan_learner()`.
     
     It allows the use of `generator` for inference without the need to first load a dataset and a learner."""
-    state_dict = torch.load(path)
+    state_dict = torch.load(path, map_location=map_location)
     generator.load_state_dict(state_dict[StateDictKeys.GENERATOR.value])
 
 
@@ -328,3 +329,11 @@ class GANOutToImgConverter:
         norm = getattr(data,'norm',False)
         if norm and norm.keywords.get('do_y',False): denorm_method = partial(data.denorm, do_x=True)
         return cls(denorm_method)
+
+
+class GeneratorFuncStateLoader(NetStateLoader):
+    def __init__(self, resolve_path:Callable):
+        self.resolve_path = resolve_path
+
+    def load(self, net:nn.Module, model_id:str):
+        load_gan_generator(net, self.resolve_path(model_id), map_location=get_device_from_module(net))

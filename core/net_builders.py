@@ -4,8 +4,12 @@ from fastai.vision import conv_layer, conv2d, conv2d_trans, NormType, res_block
 from core.layers import AvgFlatten, res_block_std, res_downsample_block, res_upsample_block, upsample_layer
 
 
-__all__ = ['custom_critic', 'interpolation_generator', 'pseudo_res_generator', 'simple_res_generator', 
-           'deep_res_generator', 'pseudo_res_critic', 'simple_res_critic', 'deep_res_critic']
+__all__ = ['custom_critic', 'DEFAULT_NOISE_SZ', 'interpolation_generator', 'pseudo_res_generator', 
+           'simple_res_generator', 'deep_res_generator', 'pseudo_res_critic', 'simple_res_critic', 
+           'deep_res_critic']
+
+
+DEFAULT_NOISE_SZ = 100
 
 
 def custom_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers:int=0,

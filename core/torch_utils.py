@@ -6,11 +6,11 @@ from fastai.core import is_listy
 from fastai.torch_core import requires_grad
 
 
-__all__ = ['are_all_frozen', 'count_layers', 'freeze_bn_layers', 'freeze_dropout_layers', 
-           'freeze_layers_if_condition', 'freeze_layers_of_types', 'get_device_from_module',
-           'get_first_index_of_layer', 'get_first_layer', 'get_first_layer_with_ind', 
-           'get_last_layer', 'get_layers', 'get_layers_with_ind', 'get_relu', 'is_any_frozen', 
-           'model_contains_layer']
+__all__ = ['are_all_frozen', 'count_layers', 'empty_cuda_cache', 'freeze_bn_layers', 
+           'freeze_dropout_layers', 'freeze_layers_if_condition', 'freeze_layers_of_types', 
+           'get_device_from_module', 'get_fastest_available_device', 'get_first_index_of_layer', 
+           'get_first_layer', 'get_first_layer_with_ind', 'get_last_layer', 'get_layers', 
+           'get_layers_with_ind', 'get_relu', 'is_any_frozen', 'model_contains_layer']
 
 
 def get_relu(leaky:float=None) -> Union[nn.ReLU, nn.LeakyReLU]:
@@ -97,5 +97,13 @@ def get_last_layer(flattened_model:List[nn.Module], layer_type:Type[nn.Module]) 
 def get_device_from_module(net:nn.Module) -> torch.device:
     net_param = next(net.parameters(), None)
     if net_param is not None: return net_param.device
+    return get_fastest_available_device()
+
+
+def get_fastest_available_device() -> torch.device:
     if torch.cuda.is_available(): return torch.device('cuda')
-    return torch.device('cpu')
+    return torch.device('cpu')    
+
+
+def empty_cuda_cache():
+    torch.cuda.empty_cache()
