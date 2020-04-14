@@ -4,7 +4,6 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import inception_v3
 from fastai.vision.gan import basic_generator
 from core.gan import GenImagesSampler, RealImagesSampler, SimpleImagesSampler
 from core.gan_metrics import FIDCalculator, InceptionScoreCalculator, INCEPTION_V3_MIN_SIZE

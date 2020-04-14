@@ -33,7 +33,7 @@ class EvaluationResult:
 
 
 class InceptionScoreCalculator:
-    # TODO: audit memory, device param useful?  
+    # TODO: audit memory  
     def __init__(self, inception_net:nn.Module=None):
         # Although, the docs say "All pre-trained models... expect input images normalized 
         # in the same way... The images have to be loaded in to a range of [0, 1] and then 
@@ -43,11 +43,12 @@ class InceptionScoreCalculator:
         # would be denormalized using those mean and std values and then mapped from [0, 1] 
         # to [-1, 1], so we only need to require images normalized in [-1, 1].
         # Pretrained version was, in fact, trained with images normalized to the range [-1, 1].
-        self.inception_net = inception_v3(pretrained=True) if inception_net is None else inception_net #.to(get_device())
+        self.inception_net = inception_v3(pretrained=True) if inception_net is None else inception_net
+        self.inception_net.to(get_fastest_available_device())
         self.inception_net.eval()
 
     def calculate(self, gen_imgs_sampler:ImagesSampler, n_total_imgs=50000, 
-                  n_imgs_by_group=500) -> EvaluationResult:
+                  n_imgs_by_group=5000) -> EvaluationResult:
         """Returns a tuple with stdev and mean of the inception score calculated for each group of `n_imgs_by_group`.
         
         The images provided by gen_imgs_sampler must be already normalized to the range [-1, 1].
@@ -76,8 +77,8 @@ class InceptionScoreCalculator:
 
 class FIDCalculator:
     def __init__(self, inception_net:nn.Module=None):
-        # TODO: audit memory
         self.inception_net = inception_v3(pretrained=True) if inception_net is None else inception_net
+        self.inception_net.to(get_fastest_available_device())
         self.inception_net.eval()
 
     def _get_inception_ftrs(self, imgs:torch.Tensor) -> torch.Tensor:
@@ -92,7 +93,7 @@ class FIDCalculator:
         return out
 
     def calculate(self, gen_imgs_sampler:ImagesSampler, real_imgs_sampler:ImagesSampler, n_total_imgs=50000, 
-                  n_imgs_by_group=500) -> EvaluationResult:
+                  n_imgs_by_group=5000) -> EvaluationResult:
         """Returns stdev and mean of the FID between groups of images provided by `gen_imgs_sampler` and `real_imgs_sampler`
         
         The images provided by gen_imgs_sampler and real_imgs_sampler must be already normalized to the range [-1, 1].
