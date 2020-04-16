@@ -60,7 +60,8 @@ def res_block_std(nf, dense:bool=False, norm_type_inner:Optional[NormType]=NormT
 class MergeResampleLayer(nn.Module):
     """Merge a shortcut with the result of the module, which is assumed to be resampled with the same stride. 
     
-    Uses a 1x1 conv + BatchNorm to perform a simple up/downsample of the input before the addition.
+    Uses a 1x1 conv [+ ReLU (if  use_activ`) and BatchNorm (if `use_bn`)] to perform a simple up/downsample of 
+    the input before the addition.
     upsample = True => performs upsample; upsample = False => performs downsample.
     """
     def __init__(self, in_ftrs:int, out_ftrs:int, stride:int=2, upsample:bool=False, leaky:Optional[float]=None,
