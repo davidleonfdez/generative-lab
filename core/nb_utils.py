@@ -21,4 +21,4 @@ def mount_gdrive() -> str:
 
 
 def output_file_link(path:str):  
-    FileLink(path)
+    return FileLink(path)
