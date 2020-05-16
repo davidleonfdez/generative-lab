@@ -1,12 +1,18 @@
+from abc import ABC, abstractmethod
 from typing import Callable, Optional
+import torch
 import torch.nn as nn
-from fastai.vision import (conv_layer, init_default, Lambda, MergeLayer, NormType, relu, SelfAttention, 
-                           SequentialEx, spectral_norm, weight_norm)
+import torch.nn.functional as F
+import fastai
+from fastai.vision import (conv2d, conv_layer, init_default, Lambda, MergeLayer, NormType, relu, 
+                           SelfAttention, SequentialEx, spectral_norm, weight_norm)
 from core.torch_utils import get_relu
 
 
 __all__ = ['AvgFlatten', 'upsample_layer', 'res_block_std', 'MergeResampleLayer', 'res_resample_block', 
-           'res_upsample_block', 'res_downsample_block']
+           'res_upsample_block', 'res_downsample_block', 'ConditionalBatchNorm2d', 'DownsamplingOperation2d',
+           'ConvHalfDownsamplingOp2d', 'AvgPoolHalfDownsamplingOp2d', 'ConvX2UpsamplingOp2d', 
+           'InterpUpsamplingOp2d', 'PooledSelfAttention2d']
 
 
 def AvgFlatten() -> nn.Module:
@@ -169,3 +175,121 @@ def res_downsample_block(in_ftrs:int, out_ftrs:int, n_extra_convs:int=1, downsam
     return res_resample_block(
         in_ftrs, out_ftrs, n_extra_convs, downsample_first, False, leaky=0.2, use_final_bn=use_final_bn, 
         use_shortcut_activ=use_shortcut_activ, **conv_kwargs)
+
+
+class ConditionalBatchNorm2d(nn.Module):
+    """BN layer whose gain (gamma) and bias (beta) params also depend on an external condition vector."""
+    def __init__(self, n_ftrs:int, cond_sz:int, gain_init:Callable=None, bias_init:Callable=None):
+        super().__init__()
+        self.n_ftrs = n_ftrs
+        # Don't learn beta and gamma inside self.bn (fix to irrelevance: beta=1, gamma=0)
+        self.bn = nn.BatchNorm2d(n_ftrs, affine=False)
+        self.gain = nn.Linear(cond_sz, n_ftrs, bias=False)
+        self.bias = nn.Linear(cond_sz, n_ftrs, bias=False)        
+        if gain_init is None: gain_init = nn.init.zeros_
+        if bias_init is None: bias_init = nn.init.zeros_
+        init_default(self.gain, gain_init)
+        init_default(self.bias, bias_init)
+
+    def forward(self, x, cond):
+        # TODO: should use global stats instead of batch stats???
+        # For that, use F.batch_norm(..., mean, var, ....)
+        out = self.bn(x)
+        gamma = 1 + self.gain(cond)
+        beta = self.bias(cond)
+        out = gamma.view(-1, self.n_ftrs, 1, 1) * out + beta.view(-1, self.n_ftrs, 1, 1)
+        return out
+
+
+class DownsamplingOperation2d(ABC):
+    @abstractmethod
+    def get_layer(self, in_ftrs:int=None, out_ftrs:int=None) -> nn.Module:
+        pass
+
+
+class UpsamplingOperation2d(ABC):
+    @abstractmethod
+    def get_layer(self, in_ftrs:int=None, out_ftrs:int=None) -> nn.Module:
+        "Must return a layer that increases the size of the last 2d of the input"
+        pass
+
+
+class ConvHalfDownsamplingOp2d(DownsamplingOperation2d):
+    def __init__(self, apply_sn:bool=False, init_func:Callable=nn.init.kaiming_normal_):
+        self.apply_sn = apply_sn
+        self.init_func = init_func
+
+    def get_layer(self, in_ftrs:int=None, out_ftrs:int=None) -> nn.Module:
+        assert (in_ftrs is not None) and (out_ftrs is not None), \
+            "in_ftrs and out_ftrs must both be valued for this DownsamplingOperation"
+        conv = init_default(
+            nn.Conv2d(in_ftrs, out_ftrs, kernel_size=4, bias=False, stride=2, padding=1), 
+            self.init_func)
+        if self.apply_sn: conv = spectral_norm(conv)
+        return conv
+
+
+class AvgPoolHalfDownsamplingOp2d(DownsamplingOperation2d):
+    def __init__(self):
+        pass
+
+    def get_layer(self, in_ftrs:int=None, out_ftrs:int=None) -> nn.Module:
+        layer = nn.AvgPool2d(2)
+        # TODO: init
+        return layer
+
+
+class ConvX2UpsamplingOp2d(UpsamplingOperation2d):
+    def __init__(self, apply_sn:bool=False, init_func:Callable=None):
+        self.apply_sn = apply_sn
+        self.init_func = init_func
+
+    def get_layer(self, in_ftrs:int=None, out_ftrs:int=None) -> nn.Module:
+        assert (in_ftrs is not None) and (out_ftrs is not None), \
+            "in_ftrs and out_ftrs must both be valued for this DownsamplingOperation"
+        # kwargs is passed like this to preserve the default of init_default without
+        # hardcoding it here again
+        init_default_kwargs = {}
+        if self.init_func is not None: init_default_kwargs['func'] = self.init_func
+        conv = init_default(
+            nn.ConvTranspose2d(in_ftrs, out_ftrs, kernel_size=4, bias=False, stride=2, padding=1),
+            **init_default_kwargs)
+        if self.apply_sn: conv = spectral_norm(conv)
+        return conv
+
+
+class InterpUpsamplingOp2d(UpsamplingOperation2d):
+    def __init__(self, scale_factor=2, mode='nearest'):
+        self.scale_factor = scale_factor
+        self.mode = mode
+
+    def get_layer(self, in_ftrs:int=None, out_ftrs:int=None) -> nn.Module:
+        return nn.Upsample(scale_factor=self.scale_factor, mode=self.mode)
+
+
+class PooledSelfAttention2d(nn.Module):
+    """Pooled self attention layer for 2d.
+    
+    Modification of fastai version whose ctor accepts an init func for the weights of
+    the convolutions.
+    """
+    def __init__(self, n_channels:int, init:Callable):
+        super().__init__()
+        self.n_channels = n_channels
+        self.theta = spectral_norm(conv2d(n_channels, n_channels//8, 1, init=init)) # query
+        self.phi   = spectral_norm(conv2d(n_channels, n_channels//8, 1, init=init)) # key
+        self.g     = spectral_norm(conv2d(n_channels, n_channels//2, 1, init=init)) # value
+        self.o     = spectral_norm(conv2d(n_channels//2, n_channels, 1, init=init))
+        self.gamma = nn.Parameter(fastai.torch_core.tensor([0.]))
+
+    def forward(self, x):
+        # code borrowed from https://github.com/ajbrock/BigGAN-PyTorch/blob/7b65e82d058bfe035fc4e299f322a1f83993e04c/layers.py#L156
+        theta = self.theta(x)
+        phi = F.max_pool2d(self.phi(x), [2,2])
+        g = F.max_pool2d(self.g(x), [2,2])    
+        theta = theta.view(-1, self.n_channels // 8, x.shape[2] * x.shape[3])
+        phi = phi.view(-1, self.n_channels // 8, x.shape[2] * x.shape[3] // 4)
+        g = g.view(-1, self.n_channels // 2, x.shape[2] * x.shape[3] // 4)
+        beta = F.softmax(torch.bmm(theta.transpose(1, 2), phi), -1)
+        o = self.o(torch.bmm(g, beta.transpose(1,2)).view(-1, self.n_channels // 2, x.shape[2], x.shape[3]))
+        return self.gamma * o + x
