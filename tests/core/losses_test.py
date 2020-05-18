@@ -1,9 +1,10 @@
 import math
-from operator import sub
+import pytest
 import torch
+import torch.nn as nn
 from core.gen_utils import SingleProbability
 from core.losses import (gan_loss_from_func, gan_loss_from_func_std, hinge_adversarial_losses, 
-                         hinge_like_adversarial_losses)
+                         hinge_like_adversarial_losses, OrthogonalRegularizer)
 
 
 def _sum_abs_diff(a, b): return torch.sum(torch.abs(a - b))
@@ -174,3 +175,39 @@ class TestHingeLikeAdversarialLosses:
 
         assert loss_g(fake_pred, fake, real) == 25
         assert loss_c(real_pred, fake_pred) == -32
+
+
+class TestOrthogonalRegularizer:
+    def test_simple(self):
+        net = nn.Linear(3, 3)
+        net.weight = nn.Parameter(torch.eye(3, 3))
+        reg = OrthogonalRegularizer(net)
+        result = reg.calculate()
+        assert result.requires_grad
+        assert result == 0
+
+    @pytest.mark.parametrize("beta", [1e-3, 1e-4])
+    def test_complex(self, beta):
+        l1 = nn.Linear(1, 2)
+        l2 = nn.Linear(2, 3)
+        l3 = nn.Linear(3, 4)
+        l1.weight = nn.Parameter(torch.ones_like(l1.weight))    
+        l2.weight = nn.Parameter(torch.Tensor([[1., -1.],
+                                              [2., 4.],
+                                              [3., 1.]]))
+        #   Wt W (l2.weight is Wt if adjusted to paper standards)     
+        #  0, -2,  2
+        # -2, 20, 10
+        #  2, 10, 10
+        l3.weight = nn.Parameter(torch.ones_like(l3.weight))
+        net = nn.Sequential(l1, l2, l3)
+        params_to_exclude = list(l3.parameters())    
+        reg = OrthogonalRegularizer(net, params_to_exclude, beta)
+        result = reg.calculate()
+        
+        l1_expected_res = 2
+        l2_expected_res = 216
+        l3_expected_res = 0
+        expected_res = beta * (l1_expected_res + l2_expected_res + l3_expected_res)
+
+        assert math.isclose(result.item(), expected_res, rel_tol=1e-5)

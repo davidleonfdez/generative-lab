@@ -1,12 +1,15 @@
+from abc import ABC, abstractmethod
 import math
-from typing import Callable, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 import torch
+import torch.nn as nn
 from fastai.vision import ifnone, LossFunction
 from core.gen_utils import Probability, SingleProbability
 
 
 __all__ = ['GANGenCritLosses', 'gan_loss_from_func', 'gan_loss_from_func_std', 'hinge_adversarial_losses', 
-           'hinge_like_adversarial_losses']
+           'hinge_like_adversarial_losses', 'KernelRegularizer', 'loss_func_with_kernel_regularizer', 
+           'OrthogonalRegularizer']
 
 
 GANGenCritLosses = Tuple[Callable, Callable]
@@ -69,3 +72,54 @@ def hinge_like_adversarial_losses(g_min_fake_pred:float=math.inf, c_min_real_pre
         return real_loss + fake_loss
 
     return _loss_G, _loss_C
+
+
+class KernelRegularizer(ABC):
+    def __init__(self, net:nn.Module, params_to_exclude:List[nn.Parameter]=None):
+        self.net = net
+        self.params_to_exclude = [] if params_to_exclude is None else params_to_exclude
+
+    def _accepts_param(self, param_name:str, w:torch.Tensor) -> bool:
+        """Determines if the parameter `w` must be taken into account in the calculation of the reg term.
+        
+        It should be overridden by child classes if any param needs to be ignored.
+        """
+        return true
+
+    def calculate(self) -> torch.Tensor:
+        """Main method, calculates the regularization term."""
+        result = torch.Tensor([0.])
+        for param_name, w in self.net.named_parameters():
+            if any(w is p for p in self.params_to_exclude): continue
+            if not self._accepts_param(param_name, w): continue
+            result += self._calc_for_param(w)
+        return result
+
+    @abstractmethod
+    def _calc_for_param(self, w):
+        """Must be implemented by child classes to contain a concrete regularization strategy."""
+
+ 
+def loss_func_with_kernel_regularizer(loss_func:Callable, kernel_regularizer:KernelRegularizer) -> Callable:
+    def _loss(*loss_args):
+        return loss_func(*loss_args) + kernel_regularizer.calculate()
+    return _loss
+
+
+class OrthogonalRegularizer(KernelRegularizer):
+    """Version of orthogonal regularization used in the BigGANs paper.
+       
+    See https://arxiv.org/pdf/1809.11096.pdf, section 3.1.
+    """
+    def __init__(self, net:nn.Module, params_to_exclude:List[nn.Parameter]=None, beta:float=1e-4):
+        super().__init__(net, params_to_exclude)
+        self.beta = beta
+
+    def _accepts_param(self, param_name:str, w:torch.Tensor) -> bool:
+        return not ('bias' in param_name) and len(w.size()) > 1
+
+    def _calc_for_param(self, w) -> torch.Tensor:
+        w_2d = w.view(w.size()[0], -1)
+        weigths_mat_mul = torch.mm(w_2d, w_2d.t())
+        weigths_mat_mul.diagonal().zero_()
+        return self.beta * (weigths_mat_mul**2).sum()
