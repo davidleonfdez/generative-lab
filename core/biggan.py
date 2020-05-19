@@ -1,11 +1,11 @@
 import functools
 import math
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torch.nn.utils.spectral_norm import spectral_norm
 from fastai.layers import conv_layer
-from fastai.vision import init_default, NormType
+from fastai.vision import init_default, ImageList, ItemBase, NormType
 from core.layers import (AvgPoolHalfDownsamplingOp2d, ConditionalBatchNorm2d, ConvHalfDownsamplingOp2d,
                          ConvX2UpsamplingOp2d, DownsamplingOperation2d, InterpUpsamplingOp2d,
                          PooledSelfAttention2d, UpsamplingOperation2d)
@@ -13,7 +13,7 @@ from core.layers import (AvgPoolHalfDownsamplingOp2d, ConditionalBatchNorm2d, Co
 
 __all__ = ['biggan_gen_64', 'biggan_gen_128', 'biggan_gen_256', 'BigGANGenerator', 'BigResBlockUp',
            'biggan_disc_64', 'biggan_disc_128', 'biggan_disc_256', 'BigGANDiscriminator',
-           'BigResBlockDown']
+           'BigResBlockDown', 'BigGANItemList']
 
 
 _default_init = nn.init.orthogonal_
@@ -287,3 +287,33 @@ class BigResBlockDown(nn.Module):
 
         identity = self.shortcut(orig)
         return x + identity
+
+
+class BigGANNoisyItem(ItemBase):
+    "An random (N(0, 1)) `ItemBase` of size `noise_sz`."
+    def __init__(self, noise_sz): self.obj,self.data = noise_sz,torch.randn(noise_sz)
+    def __str__(self):  return ''
+    def apply_tfms(self, tfms, **kwargs): 
+        for f in listify(tfms): f.resolve()
+        return self
+
+
+class BigGANItemList(ImageList):
+    "`ItemList` suitable for BigGANs."
+    _label_cls = ImageList
+
+    def __init__(self, items, noise_sz:int=100, **kwargs):
+        super().__init__(items, **kwargs)
+        self.noise_sz = noise_sz
+        self.copy_new.append('noise_sz')
+
+    def get(self, i): return BigGANNoisyItem(self.noise_sz)
+    def reconstruct(self, t): return BigGANNoisyItem(t.size(0))
+
+    def show_xys(self, xs, ys, imgsize:int=4, figsize:Optional[Tuple[int,int]]=None, **kwargs):
+        "Shows `ys` (target images) on a figure of `figsize`."
+        super().show_xys(ys, xs, imgsize=imgsize, figsize=figsize, **kwargs)
+
+    def show_xyzs(self, xs, ys, zs, imgsize:int=4, figsize:Optional[Tuple[int,int]]=None, **kwargs):
+        "Shows `zs` (generated images) on a figure of `figsize`."
+        super().show_xys(zs, xs, imgsize=imgsize, figsize=figsize, **kwargs)

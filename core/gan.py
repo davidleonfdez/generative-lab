@@ -43,7 +43,8 @@ class CustomGANLoss(GANModule):
     "Wrapper around `loss_funcC` (for the critic) and `loss_funcG` (for the generator)."
     def __init__(self, loss_wrapper_args:GANLossArgs, gan_model:GANModule):
         super().__init__()
-        self.loss_funcG,self.loss_funcC,self.gan_model = loss_wrapper_args.gen_loss_func,loss_wrapper_args.crit_loss_func,gan_model
+        self.loss_funcG,self.loss_funcC = loss_wrapper_args.gen_loss_func,loss_wrapper_args.crit_loss_func
+        self.gan_model = gan_model
 
     def generator(self, output, target):
         "Evaluate the `output` with the critic then uses `self.loss_funcG` to combine it with `target`."
