@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.spectral_norm import spectral_norm
 from fastai.layers import conv_layer
-from fastai.vision import init_default, ImageList, ItemBase, NormType
+from fastai.vision import init_default, ImageList, ItemBase, listify, NormType
 from core.layers import (AvgPoolHalfDownsamplingOp2d, ConditionalBatchNorm2d, ConvHalfDownsamplingOp2d,
                          ConvX2UpsamplingOp2d, DownsamplingOperation2d, InterpUpsamplingOp2d,
                          PooledSelfAttention2d, UpsamplingOperation2d)
