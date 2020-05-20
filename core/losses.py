@@ -3,6 +3,7 @@ import math
 from typing import Callable, List, Optional, Tuple
 import torch
 import torch.nn as nn
+import fastai
 from fastai.vision import ifnone, LossFunction
 from core.gen_utils import Probability, SingleProbability
 
@@ -75,9 +76,16 @@ def hinge_like_adversarial_losses(g_min_fake_pred:float=math.inf, c_min_real_pre
 
 
 class KernelRegularizer(ABC):
-    def __init__(self, net:nn.Module, params_to_exclude:List[nn.Parameter]=None):
+    def __init__(self, net:nn.Module, params_to_exclude:List[nn.Parameter]=None,
+                 device:torch.device=None):
         self.net = net
         self.params_to_exclude = [] if params_to_exclude is None else params_to_exclude
+        # Getting device from learner params may seem more logical at first sight, 
+        # but this could happen prior to passing the net to a Learner, and it's at
+        # Learner's init where the model (nn.Module) is moved to the device of data; 
+        # so it's better to stick to defaults and allow user to pass a specific device 
+        # if desired.
+        self.device = fastai.vision.defaults.device if device is None else device
 
     def _accepts_param(self, param_name:str, w:torch.Tensor) -> bool:
         """Determines if the parameter `w` must be taken into account in the calculation of the reg term.
@@ -88,12 +96,13 @@ class KernelRegularizer(ABC):
 
     def calculate(self) -> torch.Tensor:
         """Main method, calculates the regularization term."""
-        result = torch.Tensor([0.])
+        result = torch.tensor([0.], device=self.device)
         for param_name, w in self.net.named_parameters():
             if any(w is p for p in self.params_to_exclude): continue
             if not self._accepts_param(param_name, w): continue
             result += self._calc_for_param(w)
-        return result
+        # Return as scalar tensor (required by trainer)
+        return result[0]
 
     @abstractmethod
     def _calc_for_param(self, w):
