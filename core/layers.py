@@ -215,9 +215,11 @@ class UpsamplingOperation2d(ABC):
 
 
 class ConvHalfDownsamplingOp2d(DownsamplingOperation2d):
-    def __init__(self, apply_sn:bool=False, init_func:Callable=nn.init.kaiming_normal_):
+    def __init__(self, apply_sn:bool=False, init_func:Callable=nn.init.kaiming_normal_,
+                 activ:nn.Module=None):
         self.apply_sn = apply_sn
         self.init_func = init_func
+        self.activ = activ
 
     def get_layer(self, in_ftrs:int=None, out_ftrs:int=None) -> nn.Module:
         assert (in_ftrs is not None) and (out_ftrs is not None), \
@@ -226,7 +228,7 @@ class ConvHalfDownsamplingOp2d(DownsamplingOperation2d):
             nn.Conv2d(in_ftrs, out_ftrs, kernel_size=4, bias=False, stride=2, padding=1), 
             self.init_func)
         if self.apply_sn: conv = spectral_norm(conv)
-        return conv
+        return conv if self.activ is None else nn.Sequential(conv, self.activ)
 
 
 class AvgPoolHalfDownsamplingOp2d(DownsamplingOperation2d):
@@ -235,14 +237,14 @@ class AvgPoolHalfDownsamplingOp2d(DownsamplingOperation2d):
 
     def get_layer(self, in_ftrs:int=None, out_ftrs:int=None) -> nn.Module:
         layer = nn.AvgPool2d(2)
-        # TODO: init
         return layer
 
 
 class ConvX2UpsamplingOp2d(UpsamplingOperation2d):
-    def __init__(self, apply_sn:bool=False, init_func:Callable=None):
+    def __init__(self, apply_sn:bool=False, init_func:Callable=None, activ:nn.Module=None):
         self.apply_sn = apply_sn
         self.init_func = init_func
+        self.activ = activ
 
     def get_layer(self, in_ftrs:int=None, out_ftrs:int=None) -> nn.Module:
         assert (in_ftrs is not None) and (out_ftrs is not None), \
@@ -255,7 +257,7 @@ class ConvX2UpsamplingOp2d(UpsamplingOperation2d):
             nn.ConvTranspose2d(in_ftrs, out_ftrs, kernel_size=4, bias=False, stride=2, padding=1),
             **init_default_kwargs)
         if self.apply_sn: conv = spectral_norm(conv)
-        return conv
+        return conv if self.activ is None else nn.Sequential(conv, self.activ)
 
 
 class InterpUpsamplingOp2d(UpsamplingOperation2d):
