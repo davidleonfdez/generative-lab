@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Type, Union
 import numpy as np
 from scipy.linalg import sqrtm
 import torch
@@ -136,7 +136,8 @@ class EvaluationItem:
 
 def evaluate_models_fid(models:List[EvaluationItem], data:DataBunch, gen_state_loader:NetStateLoader, 
                         n_total_imgs:int=50000, n_imgs_by_group:int=500, calculator:FIDCalculator=None,
-                        progress_tracker:ProgressTracker=None) -> Dict[str, EvaluationResult]:
+                        progress_tracker:ProgressTracker=None, 
+                        fake_sampler_class:Type[ImagesSampler]=GenImagesSampler) -> Dict[str, EvaluationResult]:
     results = {}
     if calculator is None: calculator = FIDCalculator()
     device = get_fastest_available_device()
@@ -145,7 +146,7 @@ def evaluate_models_fid(models:List[EvaluationItem], data:DataBunch, gen_state_l
         generator = m.net_builder(*m.net_builder_args, **m.net_builder_kwargs).to(device)
         gen_state_loader.load(generator, m.model_id)
         results[m.model_id] = calculator.calculate(
-            GenImagesSampler(generator, noise_sz=m.in_sz),
+            fake_sampler_class(generator, noise_sz=m.in_sz),
             RealImagesSampler(data),
             n_total_imgs=n_total_imgs,
             n_imgs_by_group=n_imgs_by_group)

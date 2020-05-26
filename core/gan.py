@@ -2,13 +2,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
-from typing import Callable, Optional, Tuple, Union
+from typing import Callable, Optional, Tuple, Type, Union
 import torch
 import torch.nn as nn
 from fastai.vision import (add_metrics, Callback, DataBunch, denormalize, flatten_model, ifnone, Image, Learner, 
                            LearnerCallback, LossFunction, NoopLoss, OptimWrapper, PathOrStr, requires_grad, 
                            SmoothenValue, WassersteinLoss)
-from fastai.vision.gan import FixedGANSwitcher, GANLearner, GANModule, GANTrainer, NoisyItem
+from fastai.vision.gan import FixedGANSwitcher, GANLearner, GANModule, GANTrainer, ItemBase, NoisyItem
 from core.gen_utils import NetStateLoader
 from core.losses import gan_loss_from_func, gan_loss_from_func_std
 from core.torch_utils import get_device_from_module
@@ -241,14 +241,15 @@ class ImagesSampler(ABC):
 
 class GenImagesSampler(ImagesSampler):
     """Generates batches of images using a trained nn."""
-    def __init__(self, generator:nn.Module, noise_sz:int=100):
+    def __init__(self, generator:nn.Module, noise_sz:int=100, noise_class:Type[ItemBase]=NoisyItem):
         super().__init__()
         self.generator = generator
         self.noise_sz = noise_sz
+        self.noise_class = noise_class
         self.generator.eval()
 
     def get(self, n:int, detach:bool=True) -> torch.Tensor:
-        in_t = torch.cat([NoisyItem(self.noise_sz).data[None, ...] for _ in range(n)])
+        in_t = torch.cat([self.noise_class(self.noise_sz).data[None, ...] for _ in range(n)])
         in_t = in_t.to(get_device_from_module(self.generator))
         imgs_t = self.generator(in_t)
         if detach: imgs_t = imgs_t.detach()

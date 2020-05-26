@@ -6,6 +6,7 @@ import torch.nn as nn
 from torch.nn.utils.spectral_norm import spectral_norm
 from fastai.layers import conv_layer
 from fastai.vision import init_default, ImageList, ItemBase, listify, NormType
+from core.gan import GenImagesSampler
 from core.layers import (AvgPoolHalfDownsamplingOp2d, ConditionalBatchNorm2d, ConvHalfDownsamplingOp2d,
                          ConvX2UpsamplingOp2d, DownsamplingOperation2d, InterpUpsamplingOp2d,
                          PooledSelfAttention2d, UpsamplingOperation2d)
@@ -13,7 +14,7 @@ from core.layers import (AvgPoolHalfDownsamplingOp2d, ConditionalBatchNorm2d, Co
 
 __all__ = ['biggan_gen_64', 'biggan_gen_128', 'biggan_gen_256', 'BigGANGenerator', 'BigResBlockUp',
            'biggan_disc_64', 'biggan_disc_128', 'biggan_disc_256', 'BigGANDiscriminator',
-           'BigResBlockDown', 'BigGANItemList']
+           'BigResBlockDown', 'BigGANItemList', 'BigGANGenImagesSampler']
 
 
 _default_init = nn.init.orthogonal_
@@ -318,3 +319,6 @@ class BigGANItemList(ImageList):
     def show_xyzs(self, xs, ys, zs, imgsize:int=4, figsize:Optional[Tuple[int,int]]=None, **kwargs):
         "Shows `zs` (generated images) on a figure of `figsize`."
         super().show_xys(zs, xs, imgsize=imgsize, figsize=figsize, **kwargs)
+
+
+BigGANGenImagesSampler = functools.partial(GenImagesSampler, noise_class=BigGANNoisyItem)
