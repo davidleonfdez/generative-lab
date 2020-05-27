@@ -1,6 +1,7 @@
 import functools
 import math
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Type
+from scipy.stats import truncnorm
 import torch
 import torch.nn as nn
 from torch.nn.utils.spectral_norm import spectral_norm
@@ -14,7 +15,7 @@ from core.layers import (AvgPoolHalfDownsamplingOp2d, ConditionalBatchNorm2d, Co
 
 __all__ = ['biggan_gen_64', 'biggan_gen_128', 'biggan_gen_256', 'BigGANGenerator', 'BigResBlockUp',
            'biggan_disc_64', 'biggan_disc_128', 'biggan_disc_256', 'BigGANDiscriminator',
-           'BigResBlockDown', 'BigGANItemList', 'BigGANGenImagesSampler']
+           'BigResBlockDown', 'BigGANItemList', 'BigGANGenImagesSampler', 'get_bigGANTruncSampler_cls']
 
 
 _default_init = nn.init.orthogonal_
@@ -291,9 +292,23 @@ class BigResBlockDown(nn.Module):
         return x + identity
 
 
-class BigGANNoisyItem(ItemBase):
+class StdNoisyItem(ItemBase):
     "An random (N(0, 1)) `ItemBase` of size `noise_sz`."
     def __init__(self, noise_sz): self.obj,self.data = noise_sz,torch.randn(noise_sz)
+    def __str__(self):  return ''
+    def apply_tfms(self, tfms, **kwargs): 
+        for f in listify(tfms): f.resolve()
+        return self
+
+
+class TruncNoisyItem(ItemBase):
+    "An random (truncated N(0, 1)) `ItemBase` of size `noise_sz`."
+    def __init__(self, min:float, max:float, noise_sz=100):
+        self.obj = (noise_sz, min, max)
+        z = truncnorm.rvs(min, max, size=noise_sz)
+        z = torch.from_numpy(z).float()
+        self.data = z
+
     def __str__(self):  return ''
     def apply_tfms(self, tfms, **kwargs): 
         for f in listify(tfms): f.resolve()
@@ -309,8 +324,8 @@ class BigGANItemList(ImageList):
         self.noise_sz = noise_sz
         self.copy_new.append('noise_sz')
 
-    def get(self, i): return BigGANNoisyItem(self.noise_sz)
-    def reconstruct(self, t): return BigGANNoisyItem(t.size(0))
+    def get(self, i): return StdNoisyItem(self.noise_sz)
+    def reconstruct(self, t): return StdNoisyItem(t.size(0))
 
     def show_xys(self, xs, ys, imgsize:int=4, figsize:Optional[Tuple[int,int]]=None, **kwargs):
         "Shows `ys` (target images) on a figure of `figsize`."
@@ -321,4 +336,9 @@ class BigGANItemList(ImageList):
         super().show_xys(zs, xs, imgsize=imgsize, figsize=figsize, **kwargs)
 
 
-BigGANGenImagesSampler = functools.partial(GenImagesSampler, noise_class=BigGANNoisyItem)
+BigGANGenImagesSampler = functools.partial(GenImagesSampler, noise_class=StdNoisyItem)
+
+
+def get_bigGANTruncSampler_cls(min:float, max:float) -> Type[GenImagesSampler]:
+    return functools.partial(GenImagesSampler, 
+                             noise_class=functools.partial(TruncNoisyItem, min, max))
