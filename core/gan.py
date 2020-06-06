@@ -14,8 +14,9 @@ from core.losses import gan_loss_from_func, gan_loss_from_func_std
 from core.torch_utils import get_device_from_module
 
 
-__all__ = ['GANLossArgs', 'GANGPLossArgs', 'CustomGANLoss', 'GANGPLoss', 'CustomGANTrainer', 'CustomGANLearner', 
-           'GANGPLearner', 'GeneratorFuncStateLoader', 'GenImagesSampler', 'load_gan_generator', 'load_gan_learner', 
+__all__ = ['GANLossArgs', 'GANGPLossArgs', 'CondGANLossArgs', 'CustomGANLoss', 'GANGPLoss', 'ConditionalGANLoss', 
+           'CustomGANTrainer', 'ConditionalGANTrainer', 'CustomGANLearner', 'GANGPLearner', 'ConditionalGANLearner', 
+           'GeneratorFuncStateLoader', 'GenImagesSampler', 'load_gan_generator', 'load_gan_learner', 
            'train_checkpoint_gan', 'save_gan_learner',]
 
 
@@ -37,6 +38,11 @@ class GANLossArgs:
 class GANGPLossArgs(GANLossArgs):
     real_provider:Callable[[bool], torch.Tensor]
     plambda:float=10.
+
+
+@dataclass
+class CondGANLossArgs(GANLossArgs):
+    gen_categories_provider:Callable[[], torch.Tensor]
 
 
 class CustomGANLoss(GANModule):
@@ -94,6 +100,32 @@ class GANGPLoss(CustomGANLoss):
         return self.plambda * ((grads.norm() - 1)**2)
 
 
+class ConditionalGANLoss(GANModule):
+    """Wrapper around `loss_funcC` (for the critic) and `loss_funcG` (for the generator) of a Conditional GAN.
+    
+    Assumes forward methods of generator and critic expect a category id as a second parameter.
+    """
+    def __init__(self, loss_wrapper_args:CondGANLossArgs, gan_model:GANModule):
+        super().__init__()
+        self.loss_funcG = loss_wrapper_args.gen_loss_func
+        self.loss_funcC = loss_wrapper_args.crit_loss_func
+        self.gen_categories_provider = loss_wrapper_args.gen_categories_provider
+        self.gan_model = gan_model
+
+    def generator(self, output, target, target_cat):
+        "Evaluate the `output` with the critic then uses `self.loss_funcG` to combine it with `target`."
+        last_gen_cats = self.gen_categories_provider(self.gen_mode)
+        fake_pred = self.gan_model.critic(output, last_gen_cats)
+        return self.loss_funcG(fake_pred, target, output)
+
+    def critic(self, real_pred, input_z, input_cat):
+        "Create some `fake_pred` with the generator from (`input_z`, `input_cat`) and compare them to `real_pred` in `self.loss_funcD`."
+        # TODO: Is input_cat.requires_grad_(False) necessary or it comes ok?????
+        fake = self.gan_model.generator(input_z.requires_grad_(False), input_cat).requires_grad_(True)
+        fake_pred = self.gan_model.critic(fake, input_cat)
+        return self.loss_funcC(real_pred, fake_pred)
+
+
 class CustomGANTrainer(GANTrainer):
     "Handles GAN Training."
     _order=-20
@@ -105,12 +137,15 @@ class CustomGANTrainer(GANTrainer):
         # -"delegates" attribute advised by fastai: pending review
         super().__init__(learn, switch_eval=switch_eval, clip=clip, beta=beta, gen_first=gen_first, show_img=show_img)
 
+    def _reconstruct_img(self, data:DataBunch, denorm_img:torch.Tensor):
+        return data.train_ds.y.reconstruct(denorm_img)
+
     def on_batch_begin(self, last_input, last_target, **kwargs):
         "Clamp the weights with `self.clip` if it's not None, return the correct input."
         self.last_real = last_target if not self.gen_mode else None
         return super().on_batch_begin(last_input, last_target, **kwargs)
 
-    # Overridden just for bug fix in data.denorm() call
+
     def on_epoch_end(self, pbar, epoch, last_metrics, **kwargs):
         "Put the various losses in the recorder and show a sample image."
         if not hasattr(self, 'last_gen') or not self.show_img: return
@@ -118,7 +153,7 @@ class CustomGANTrainer(GANTrainer):
         img = self.last_gen[0]
         norm = getattr(data,'norm',False)
         if norm and norm.keywords.get('do_y',False): img = data.denorm(img, do_x=True)
-        img = data.train_ds.y.reconstruct(img)
+        img = self._reconstruct_img(data, img)
         self.imgs.append(img)
         self.titles.append(f'Epoch {epoch}')
         pbar.show_imgs(self.imgs, self.titles)
@@ -141,16 +176,35 @@ class CustomGANTrainer(GANTrainer):
         }
 
 
+class ConditionalGANTrainer(CustomGANTrainer):
+    def _reconstruct_img(self, data:DataBunch, denorm_img:torch.Tensor):
+        # denorm_img is probably not denormalized actually, at least if we have used
+        # ImageCategoryList as label_cls. That's done in ImageCategoryList.reconstruct().
+        img_cat_item = data.train_ds.y.reconstruct([denorm_img, self.last_gen_labels[0]])
+        return img_cat_item.img
+
+    def on_batch_begin(self, last_input, last_target, **kwargs):
+        "Clamp the weights with `self.clip` if it's not None, return the correct input."
+        if self.clip is not None:
+            for p in self.critic.parameters(): p.data.clamp_(-self.clip, self.clip)
+        if last_input[0].dtype == torch.float16: last_target = (to_half(last_target[0]), last_target[1])
+        self.last_gen_labels = last_input[1]
+        return {'last_input':last_input,'last_target':last_target} if self.gen_mode else {'last_input':last_target,'last_target':last_input}           
+        # Cant' reuse `super().on_batch_begin(last_input, last_target, **kwargs)`
+        # because it assumes last_input is a tensor and in this case it's a tuple
+
+
 class CustomGANLearner(Learner):
     "A `Learner` suitable for GANs."
     def __init__(self, data:DataBunch, generator:nn.Module, critic:nn.Module, gan_loss_args:GANLossArgs,
                  switcher:Optional[Callback]=None, gen_first:bool=False, switch_eval:bool=True,
-                 show_img:bool=True, clip:Optional[float]=None, **learn_kwargs):
+                 show_img:bool=True, clip:Optional[float]=None, 
+                 gan_trainer_cls:Type[CustomGANTrainer]=CustomGANTrainer, **learn_kwargs):
         gan = GANModule(generator, critic)
         loss_func = self._create_loss_wrapper(gan_loss_args, gan)
         switcher = ifnone(switcher, partial(FixedGANSwitcher, n_crit=5, n_gen=1))
         super().__init__(data, gan, loss_func=loss_func, callback_fns=[switcher], **learn_kwargs)
-        trainer = CustomGANTrainer(self, clip=clip, switch_eval=switch_eval, show_img=show_img)
+        trainer = gan_trainer_cls(self, clip=clip, switch_eval=switch_eval, show_img=show_img)
         self.gan_trainer = trainer
         self.callbacks.append(trainer)
 
@@ -191,6 +245,21 @@ class GANGPLearner(CustomGANLearner):
         "Create a WGAN-GP from `data`, `generator` and `critic`."
         return cls(data, generator, critic, GANLossArgs(NoopLoss(), WassersteinLoss()), switcher=switcher, 
                    clip=clip, **learn_kwargs)
+
+
+class ConditionalGANLearner(CustomGANLearner):
+    "A `Learner` suitable for GANs that uses gradient penalty to enforce Lipschitz constraint."
+    def __init__(self, data:DataBunch, generator:nn.Module, critic:nn.Module, gan_loss_args:GANLossArgs,
+                 switcher:Optional[Callback]=None, gen_first:bool=False, switch_eval:bool=True, show_img:bool=True,
+                 clip:Optional[float]=None, **learn_kwargs):
+        gen_categories_provider = lambda gen_mode: self.gan_trainer.last_gen_labels if gen_mode else None        
+        cgan_loss_args = CondGANLossArgs(gan_loss_args.gen_loss_func, gan_loss_args.crit_loss_func, 
+                                         gen_categories_provider)
+        super().__init__(data, generator, critic, cgan_loss_args, switcher, gen_first, switch_eval, show_img, 
+                         clip, gan_trainer_cls=ConditionalGANTrainer, **learn_kwargs)
+
+    def _create_loss_wrapper(self, loss_wrapper_args:GANLossArgs, gan:GANModule) -> CustomGANLoss:
+        return ConditionalGANLoss(loss_wrapper_args, gan)
 
 
 def save_gan_learner(learner:CustomGANLearner, path:PathOrStr):

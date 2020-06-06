@@ -1,21 +1,21 @@
 import functools
 import math
 from typing import Callable, List, Optional, Tuple, Type
-from scipy.stats import truncnorm
 import torch
 import torch.nn as nn
 from torch.nn.utils.spectral_norm import spectral_norm
 from fastai.layers import conv_layer
-from fastai.vision import init_default, ImageList, ItemBase, listify, NormType
+from fastai.vision import init_default, ImageList, ItemBase, NormType
+from core.data import StdNoisyItem, TruncNoisyItem
 from core.gan import GenImagesSampler
-from core.layers import (AvgPoolHalfDownsamplingOp2d, ConditionalBatchNorm2d, ConvHalfDownsamplingOp2d,
-                         ConvX2UpsamplingOp2d, DownsamplingOperation2d, InterpUpsamplingOp2d,
-                         PooledSelfAttention2d, UpsamplingOperation2d)
+from core.layers import (AvgFlatten, AvgPoolHalfDownsamplingOp2d, ConditionalBatchNorm2d, 
+                         ConvHalfDownsamplingOp2d, ConvX2UpsamplingOp2d, DownsamplingOperation2d, 
+                         InterpUpsamplingOp2d, PooledSelfAttention2d, UpsamplingOperation2d)
 
 
 __all__ = ['biggan_gen_64', 'biggan_gen_128', 'biggan_gen_256', 'BigGANGenerator', 'BigResBlockUp',
            'biggan_disc_64', 'biggan_disc_128', 'biggan_disc_256', 'BigGANDiscriminator',
-           'BigResBlockDown', 'BigGANItemList', 'BigGANGenImagesSampler', 'get_bigGANTruncSampler_cls']
+           'BigResBlockDown', 'BigGANGenImagesSampler', 'get_bigGANTruncSampler_cls']
 
 
 _default_init = nn.init.orthogonal_
@@ -205,7 +205,7 @@ def biggan_disc_256(in_n_channels:int=3, ch_mult:int=96, **disc_kwargs):
 class BigGANDiscriminator(nn.Module):
     def __init__(self, in_sz:int, res_blocks_n_ftrs:List[Tuple[int, int]], idx_block_self_att:int, 
                  n_classes:int=1, down_op:DownsamplingOperation2d=None, activ:nn.Module=None,
-                 init_func:Callable=_default_init):
+                 init_func:Callable=_default_init, flatten_out=False):
         super().__init__()
 
         self.n_classes = n_classes
@@ -234,6 +234,7 @@ class BigGANDiscriminator(nn.Module):
         self.layers = nn.Sequential(*layers)
         self.linear = spectral_norm(nn.Linear(final_n_ftrs, 1))
         self.embed = nn.Embedding(n_classes, final_n_ftrs)
+        self.flatten = AvgFlatten() if flatten_out else None
 
         self._init_weights(init_func)
 
@@ -254,7 +255,9 @@ class BigGANDiscriminator(nn.Module):
         if self.n_classes == 1: return class_indep_out
 
         class_dep_out = (self.embed(y) * h).sum(dim=1, keepdim=True)
-        return class_indep_out + class_dep_out
+        out = class_indep_out + class_dep_out
+        if self.flatten is not None: out = self.flatten(out)
+        return out
 
 
 class BigResBlockDown(nn.Module):
@@ -290,50 +293,6 @@ class BigResBlockDown(nn.Module):
 
         identity = self.shortcut(orig)
         return x + identity
-
-
-class StdNoisyItem(ItemBase):
-    "An random (N(0, 1)) `ItemBase` of size `noise_sz`."
-    def __init__(self, noise_sz): self.obj,self.data = noise_sz,torch.randn(noise_sz)
-    def __str__(self):  return ''
-    def apply_tfms(self, tfms, **kwargs): 
-        for f in listify(tfms): f.resolve()
-        return self
-
-
-class TruncNoisyItem(ItemBase):
-    "An random (truncated N(0, 1)) `ItemBase` of size `noise_sz`."
-    def __init__(self, min:float, max:float, noise_sz=100):
-        self.obj = (noise_sz, min, max)
-        z = truncnorm.rvs(min, max, size=noise_sz)
-        z = torch.from_numpy(z).float()
-        self.data = z
-
-    def __str__(self):  return ''
-    def apply_tfms(self, tfms, **kwargs): 
-        for f in listify(tfms): f.resolve()
-        return self
-
-
-class BigGANItemList(ImageList):
-    "`ItemList` suitable for BigGANs."
-    _label_cls = ImageList
-
-    def __init__(self, items, noise_sz:int=100, **kwargs):
-        super().__init__(items, **kwargs)
-        self.noise_sz = noise_sz
-        self.copy_new.append('noise_sz')
-
-    def get(self, i): return StdNoisyItem(self.noise_sz)
-    def reconstruct(self, t): return StdNoisyItem(t.size(0))
-
-    def show_xys(self, xs, ys, imgsize:int=4, figsize:Optional[Tuple[int,int]]=None, **kwargs):
-        "Shows `ys` (target images) on a figure of `figsize`."
-        super().show_xys(ys, xs, imgsize=imgsize, figsize=figsize, **kwargs)
-
-    def show_xyzs(self, xs, ys, zs, imgsize:int=4, figsize:Optional[Tuple[int,int]]=None, **kwargs):
-        "Shows `zs` (generated images) on a figure of `figsize`."
-        super().show_xys(zs, xs, imgsize=imgsize, figsize=figsize, **kwargs)
 
 
 BigGANGenImagesSampler = functools.partial(GenImagesSampler, noise_class=StdNoisyItem)
