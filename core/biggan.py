@@ -251,11 +251,12 @@ class BigGANDiscriminator(nn.Module):
         h = x.sum(dim=(-1, -2)) 
         # output size (N, 1)
         class_indep_out = self.linear(h)
-        
-        if self.n_classes == 1: return class_indep_out
+        out = class_indep_out
 
-        class_dep_out = (self.embed(y) * h).sum(dim=1, keepdim=True)
-        out = class_indep_out + class_dep_out
+        if self.n_classes > 1: 
+            class_dep_out = (self.embed(y) * h).sum(dim=1, keepdim=True)
+            out = out + class_dep_out
+            
         if self.flatten is not None: out = self.flatten(out)
         return out
 
