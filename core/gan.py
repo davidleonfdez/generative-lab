@@ -180,7 +180,10 @@ class ConditionalGANTrainer(CustomGANTrainer):
     def _reconstruct_img(self, data:DataBunch, denorm_img:torch.Tensor):
         # denorm_img is probably not denormalized actually, at least if we have used
         # ImageCategoryList as label_cls. That's done in ImageCategoryList.reconstruct().
-        img_cat_item = data.train_ds.y.reconstruct([denorm_img, self.last_gen_labels[0]])
+        last_in_noise = self.last_input[0][0]
+        last_in_cat_id = self.last_input[1][0]
+        x = data.train_ds.x.reconstruct((last_in_noise, last_in_cat_id))
+        img_cat_item = data.train_ds.y.reconstruct(denorm_img, x)
         return img_cat_item.img
 
     def on_batch_begin(self, last_input, last_target, **kwargs):
@@ -188,7 +191,7 @@ class ConditionalGANTrainer(CustomGANTrainer):
         if self.clip is not None:
             for p in self.critic.parameters(): p.data.clamp_(-self.clip, self.clip)
         if last_input[0].dtype == torch.float16: last_target = (to_half(last_target[0]), last_target[1])
-        self.last_gen_labels = last_input[1]
+        self.last_input = last_input
         return {'last_input':last_input,'last_target':last_target} if self.gen_mode else {'last_input':last_target,'last_target':last_input}           
         # Cant' reuse `super().on_batch_begin(last_input, last_target, **kwargs)`
         # because it assumes last_input is a tensor and in this case it's a tuple
@@ -252,7 +255,7 @@ class ConditionalGANLearner(CustomGANLearner):
     def __init__(self, data:DataBunch, generator:nn.Module, critic:nn.Module, gan_loss_args:GANLossArgs,
                  switcher:Optional[Callback]=None, gen_first:bool=False, switch_eval:bool=True, show_img:bool=True,
                  clip:Optional[float]=None, **learn_kwargs):
-        gen_categories_provider = lambda gen_mode: self.gan_trainer.last_gen_labels if gen_mode else None        
+        gen_categories_provider = lambda gen_mode: self.gan_trainer.last_input[1] if gen_mode else None        
         cgan_loss_args = CondGANLossArgs(gan_loss_args.gen_loss_func, gan_loss_args.crit_loss_func, 
                                          gen_categories_provider)
         super().__init__(data, generator, critic, cgan_loss_args, switcher, gen_first, switch_eval, show_img, 
