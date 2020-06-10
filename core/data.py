@@ -111,17 +111,23 @@ class BigGANItemList(ImageList):
 
     def show_xys(self, xs, ys, imgsize:int=4, figsize:Optional[Tuple[int,int]]=None, **kwargs):
         "Shows `ys` (target images) on a figure of `figsize`."
-        # Use classes as titles
-        class_labels = ItemList([Category(y.cat_id, y.cat_name) for y in ys])
-        super().show_xys(ys, class_labels, imgsize=imgsize, figsize=figsize, **kwargs)
+        if self.n_classes > 1:
+            # Use classes as titles            
+            displayed_ys = ItemList([Category(y.cat_id, y.cat_name) for y in ys])
+        else:
+            displayed_ys = xs
+        super().show_xys(ys, displayed_ys, imgsize=imgsize, figsize=figsize, **kwargs)
 
     def show_xyzs(self, xs, ys, zs, imgsize:int=4, figsize:Optional[Tuple[int,int]]=None, **kwargs):
         "Shows `zs` (generated images) on a figure of `figsize`."
-        # TODO: a CategoryManager would be smarter
-        cat_names_by_id = ys[0].parent.cat_names_by_id
-        class_labels_list = ItemList([Category(x.cat_id, cat_names_by_id[x.cat_id.item()]) 
-                                      for x in xs])
-        super().show_xys(zs, class_labels_list, imgsize=imgsize, figsize=figsize, **kwargs)
+        if self.n_classes > 1:
+            # TODO: a CategoryManager would be smarter
+            cat_names_by_id = ys[0].parent.cat_names_by_id
+            displayed_ys = ItemList([Category(x.cat_id, cat_names_by_id[x.cat_id.item()]) 
+                                     for x in xs])
+        else:
+            displayed_ys = xs                              
+        super().show_xys(zs, displayed_ys, imgsize=imgsize, figsize=figsize, **kwargs)
 
 
 class ImageCategoryList(ImageList):
