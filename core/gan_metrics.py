@@ -92,8 +92,19 @@ class FIDCalculator:
         self.inception_net.fc = fc
         return out
 
+    def _get_ftrs(self, sampler:ImagesSampler, n_imgs:int, max_affordable_inception_bs:int) -> torch.Tensor:
+        ftrs = None
+        n_imgs_left = n_imgs
+        while n_imgs_left > 0:
+            n_imgs_subset = min(max_affordable_inception_bs, n_imgs_left)
+            imgs = sampler.get(n_imgs_subset)
+            new_ftrs = self._get_inception_ftrs(imgs)
+            ftrs = torch.cat([ftrs, new_ftrs]) if ftrs is not None else new_ftrs
+            n_imgs_left -= n_imgs_subset
+        return ftrs
+    
     def calculate(self, gen_imgs_sampler:ImagesSampler, real_imgs_sampler:ImagesSampler, n_total_imgs=50000, 
-                  n_imgs_by_group=5000) -> EvaluationResult:
+                  n_imgs_by_group=5000, max_affordable_inception_bs=500) -> EvaluationResult:
         """Returns stdev and mean of the FID between groups of images provided by `gen_imgs_sampler` and `real_imgs_sampler`
         
         The images provided by gen_imgs_sampler and real_imgs_sampler must be already normalized to the range [-1, 1].
@@ -102,13 +113,13 @@ class FIDCalculator:
         assert n_total_imgs % n_imgs_by_group == 0, 'n_total_imgs must be divisible by n_imgs_by_group'
         n_groups = n_total_imgs // n_imgs_by_group
         split_fids = []
- 
-        for i in range(n_groups):
-            real_imgs = real_imgs_sampler.get(n_imgs_by_group)
-            fake_imgs = gen_imgs_sampler.get(n_imgs_by_group)
-            real_ftrs = self._get_inception_ftrs(real_imgs)
-            fake_ftrs = self._get_inception_ftrs(fake_imgs)
 
+        for i in range(n_groups):            
+            real_ftrs = self._get_ftrs(real_imgs_sampler, n_imgs_by_group, 
+                                       max_affordable_inception_bs)
+            fake_ftrs = self._get_ftrs(gen_imgs_sampler, n_imgs_by_group, 
+                                       max_affordable_inception_bs)
+            
             sqr_diff = ((real_ftrs.mean(dim=0) - fake_ftrs.mean(dim=0))**2).sum()
             cov_real = np.cov(real_ftrs.cpu().numpy(), rowvar=False)
             cov_fake = np.cov(fake_ftrs.cpu().numpy(), rowvar=False)

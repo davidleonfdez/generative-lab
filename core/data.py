@@ -102,7 +102,7 @@ class BigGANItemList(ImageList):
     def get(self, i): 
         return (StdNoisyItem(self.noise_sz) if self.n_classes == 1 
                 else NoiseCategoryItem(self.noise_sz, self.n_classes))
-    
+
     def reconstruct(self, t):
         if is_listy(t): 
             noise, cat_id = t
