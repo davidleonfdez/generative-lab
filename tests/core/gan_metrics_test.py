@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from fastai.vision.gan import basic_generator
-from core.gan import GenImagesSampler, RealImagesSampler, SimpleImagesSampler
-from core.gan_metrics import FIDCalculator, InceptionScoreCalculator, INCEPTION_V3_MIN_SIZE
+from genlab.core.gan import GenImagesSampler, RealImagesSampler, SimpleImagesSampler
+from genlab.core.gan_metrics import FIDCalculator, InceptionScoreCalculator, INCEPTION_V3_MIN_SIZE
 from testing_fakes import get_fake_gan_data
 
 

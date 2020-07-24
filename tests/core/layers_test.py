@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 from fastai.layers import flatten_model, NormType
-from core.layers import (AvgFlatten, MergeResampleLayer, res_block_std, upsample_layer, res_downsample_block, 
+from genlab.core.layers import (AvgFlatten, MergeResampleLayer, res_block_std, upsample_layer, res_downsample_block, 
                          res_upsample_block)
-from core.torch_utils import (count_layers, get_first_index_of_layer, get_first_layer, get_first_layer_with_ind,
+from genlab.core.torch_utils import (count_layers, get_first_index_of_layer, get_first_layer, get_first_layer_with_ind,
                               model_contains_layer)
 
 

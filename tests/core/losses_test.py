@@ -2,8 +2,8 @@ import math
 import pytest
 import torch
 import torch.nn as nn
-from core.gen_utils import SingleProbability
-from core.losses import (gan_loss_from_func, gan_loss_from_func_std, hinge_adversarial_losses, 
+from genlab.core.gen_utils import SingleProbability
+from genlab.core.losses import (gan_loss_from_func, gan_loss_from_func_std, hinge_adversarial_losses, 
                          hinge_like_adversarial_losses, OrthogonalRegularizer)
 
 

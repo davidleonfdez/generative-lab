@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 import torch
 import torch.nn as nn
 from fastai.vision import flatten_model
-from core.biggan import *
-from core.layers import ConvHalfDownsamplingOp2d, ConvX2UpsamplingOp2d
-from core.torch_utils import count_layers, get_layers
+from genlab.core.biggan import *
+from genlab.core.layers import ConvHalfDownsamplingOp2d, ConvX2UpsamplingOp2d
+from genlab.core.torch_utils import count_layers, get_layers
 
 
 @pytest.mark.parametrize("net_builder, in_sz, expected_out_sz", [

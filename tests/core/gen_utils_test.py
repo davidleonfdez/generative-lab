@@ -1,7 +1,7 @@
 import math
 import pytest
 import torch
-from core.gen_utils import (compare_std_lists, compare_tensor_lists, conv_out_size, dict_diff, DictDiffType,
+from genlab.core.gen_utils import (compare_std_lists, compare_tensor_lists, conv_out_size, dict_diff, DictDiffType,
                             is_listy_or_tensor_array, list_diff, ListsDiffType, ProgressTracker, 
                             RandomProbability, SingleProbability)
 

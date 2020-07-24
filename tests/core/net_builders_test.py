@@ -4,10 +4,10 @@ import pytest
 import torch
 import torch.nn as nn
 from fastai.layers import flatten_model, MergeLayer
-from core.layers import MergeResampleLayer
-from core.net_builders import (custom_critic, deep_res_critic, deep_res_generator, interpolation_generator, 
+from genlab.core.layers import MergeResampleLayer
+from genlab.core.net_builders import (custom_critic, deep_res_critic, deep_res_generator, interpolation_generator, 
                                pseudo_res_critic, pseudo_res_generator, simple_res_critic, simple_res_generator)
-from core.torch_utils import (count_layers, get_first_index_of_layer, get_first_layer, get_last_layer, 
+from genlab.core.torch_utils import (count_layers, get_first_index_of_layer, get_first_layer, get_last_layer, 
                               get_layers, get_layers_with_ind, model_contains_layer)
 
 

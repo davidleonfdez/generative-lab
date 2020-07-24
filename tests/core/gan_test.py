@@ -7,9 +7,9 @@ from fastai.data_block import DataBunch
 from fastai.vision import Image
 from fastai.vision.gan import (basic_critic, basic_generator, GANItemList, GANModule, Lambda, ImageList, 
                                NoopLoss, WassersteinLoss)
-from core.gan import (CustomGANLoss, CustomGANTrainer, CustomGANLearner, GANGPLearner, GANGPLoss, 
+from genlab.core.gan import (CustomGANLoss, CustomGANTrainer, CustomGANLearner, GANGPLearner, GANGPLoss, 
                       GANGPLossArgs, GANLossArgs, GANOutToImgConverter, RealImagesSampler)
-from core.losses import gan_loss_from_func_std
+from genlab.core.losses import gan_loss_from_func_std
 from testing_fakes import get_fake_gan_data, get_fake_gan_data_from_items
 
 

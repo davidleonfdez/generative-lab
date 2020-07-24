@@ -1,7 +1,7 @@
 import pytest
 import torch.nn as nn
 from fastai.torch_core import requires_grad
-from core.torch_utils import (are_all_frozen, count_layers, freeze_bn_layers, freeze_dropout_layers, 
+from genlab.core.torch_utils import (are_all_frozen, count_layers, freeze_bn_layers, freeze_dropout_layers, 
                               freeze_layers_if_condition, freeze_layers_of_types, get_first_index_of_layer, 
                               get_first_layer, get_first_layer_with_ind, get_last_layer, get_layers, 
                               get_layers_with_ind, get_relu, is_any_frozen, model_contains_layer)
