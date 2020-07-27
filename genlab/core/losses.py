@@ -10,7 +10,7 @@ from genlab.core.gen_utils import Probability, SingleProbability
 from genlab.core.torch_utils import split_in_patches
 
 
-__all__ = ['content_loss', 'GANGenCritLosses', 'gan_loss_from_func', 'gan_loss_from_func_std', 
+__all__ = ['GANGenCritLosses', 'gan_loss_from_func', 'gan_loss_from_func_std', 
            'hinge_adversarial_losses', 'hinge_like_adversarial_losses', 'KernelRegularizer', 
            'loss_func_with_kernel_regularizer', 'OrthogonalRegularizer', 'smoothness_reg',
            'style_loss']
@@ -78,11 +78,9 @@ def hinge_like_adversarial_losses(g_min_fake_pred:float=math.inf, c_min_real_pre
     return _loss_G, _loss_C
 
 
-def content_loss(output, target):
-    return torch.norm(output - target)**2
-
-
-def style_loss(gen_ftrs, style_ftrs, precalc_style_patches=None, patch_sz:int=3):
+def style_loss(gen_ftrs:torch.Tensor, style_ftrs:torch.Tensor, precalc_style_patches=None, 
+               patch_sz:int=3) -> torch.Tensor:
+    """MRF-based style loss proposed in https://arxiv.org/pdf/1601.04589.pdf."""
     style_patches = (split_in_patches(style_ftrs, patch_sz) if precalc_style_patches is None 
                      else precalc_style_patches)
     # n_style_patches will be greater than n_gen_patches when there are several versions
@@ -109,9 +107,7 @@ def style_loss(gen_ftrs, style_ftrs, precalc_style_patches=None, patch_sz:int=3)
     # from ftrs(style image), for the patch `i` extracted from ftrs(gen image)
     best_matches = style_patches[idx_best_matches]
 
-    # it's doing sqrt before my sqr undoes it, maybe it's better not to use norm()
-    # and do it manually
-    return (gen_patches - best_matches).norm()**2
+    return F.mse_loss(gen_patches, best_matches, reduction='sum')
 
 
 def smoothness_reg(img_t:torch.Tensor) -> torch.Tensor:

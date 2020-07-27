@@ -10,7 +10,7 @@ from fastai.callbacks import hook_outputs
 import fastai.vision
 import fastai.vision.transform as fastTF
 from genlab.core.gen_utils import ProgressTracker
-from genlab.core.losses import content_loss, style_loss, smoothness_reg
+from genlab.core.losses import style_loss, smoothness_reg
 from genlab.core.torch_utils import split_in_patches
 
 
@@ -21,6 +21,9 @@ __all__ = ['LossWeights', 'FeaturesCalculator', 'normalize', 'denormalize',
 
 vgg_content_layers_idx = [22]
 vgg_style_layers_idx = [11, 20]
+
+
+content_loss = nn.MSELoss(reduction='sum')
 
 
 @dataclass
