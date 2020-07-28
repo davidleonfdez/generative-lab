@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+import PIL
+import requests
 from typing import Any, Callable, List, Tuple, Union
 import torch
 import torch.nn as nn
@@ -7,8 +9,9 @@ from enum import Enum
 
 
 __all__ = ['compare_std_lists', 'compare_tensor_lists', 'dict_diff', 'get_diff_method', 'is_listy_or_tensor_array', 
-           'list_diff', 'ListDictDiffResult', 'ListsDiffType', 'NetStateLoader', 'PrinterProgressTracker', 
-           'Probability', 'ProgressTracker', 'RandomProbability', 'SingleProbability', 'TensorListComparisonResult']
+           'get_img_from_url', 'list_diff', 'ListDictDiffResult', 'ListsDiffType', 'NetStateLoader', 
+           'PrinterProgressTracker', 'Probability', 'ProgressTracker', 'RandomProbability', 'SingleProbability', 
+           'TensorListComparisonResult']
 
 
 class ListsDiffType(Enum):
@@ -202,6 +205,10 @@ def get_diff_method(obj1, obj2):
 
 def conv_out_size(in_size:int, ks:int, stride:int, padding:int) -> int:
     return (in_size + 2 * padding - ks) // stride + 1
+
+
+def get_img_from_url(url) -> PIL.Image.Image:
+    return PIL.Image.open(requests.get(url, stream=True).raw)  
 
 
 class Probability(ABC):

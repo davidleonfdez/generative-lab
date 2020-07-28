@@ -2,9 +2,12 @@ import math
 import pytest
 import torch
 import torch.nn as nn
-from genlab.core.gen_utils import SingleProbability
+from genlab.core.gen_utils import get_img_from_url, SingleProbability
 from genlab.core.losses import (gan_loss_from_func, gan_loss_from_func_std, hinge_adversarial_losses, 
-                         hinge_like_adversarial_losses, OrthogonalRegularizer)
+                                hinge_like_adversarial_losses, OrthogonalRegularizer, smoothness_reg,
+                                style_loss)
+from genlab.core.torch_utils import split_in_patches
+from genlab.style_transfer import FeaturesCalculator, img_to_tensor, vgg_content_layers_idx, vgg_style_layers_idx
 
 
 def _sum_abs_diff(a, b): return torch.sum(torch.abs(a - b))
@@ -175,6 +178,53 @@ class TestHingeLikeAdversarialLosses:
 
         assert loss_g(fake_pred, fake, real) == 25
         assert loss_c(real_pred, fake_pred) == -32
+
+
+class TestStyleLoss:
+    def _img_t_from_url(self, url:str, target_sz:int):
+        img = get_img_from_url(url)
+        return img_to_tensor(img, target_sz)
+    
+    @pytest.mark.slow
+    def test(self, pretrained_vgg19):
+        # newcastle_shirt_url = 'https://www.3retro.com/siteimg/prodhires/584-189.jpg'
+        # zebra_url = 'https://s3-us-west-2.amazonaws.com/melingoimages/Images/108880.jpg'
+        # horse_url = 'https://image.shutterstock.com/image-photo/chestnut-stallion-isolated-over-white-260nw-271761581.jpg'
+        ftrs_calc = FeaturesCalculator(vgg_style_layers_idx, vgg_content_layers_idx, 
+                                       pretrained_vgg19)
+        url_to_ftrs = lambda url: ftrs_calc.calc_style(self._img_t_from_url(url, 128))
+
+        ftr_map_1 = torch.rand(1, 16, 8, 8)
+        ftr_map_2 = torch.rand(1, 16, 8, 8)    
+        # ftr_map_zebra = url_to_ftrs(zebra_url)[0]
+        # ftr_map_newcastle_shirt = url_to_ftrs(newcastle_shirt_url)[0]
+        # ftr_map_horse = url_to_ftrs(horse_url)[0]
+        # ftr_map_newcastle_shirt_patches = split_in_patches(ftr_map_newcastle_shirt)    
+        # ftr_map_horse_patches = split_in_patches(ftr_map_horse)    
+        
+        loss_equal = style_loss(ftr_map_1, ftr_map_1)
+        loss_different = style_loss(ftr_map_1, ftr_map_2)        
+        # loss_zebra_newcastle = style_loss(ftr_map_zebra, ftr_map_newcastle_shirt, ftr_map_newcastle_shirt_patches)
+        # loss_zebra_horse = style_loss(ftr_map_zebra, ftr_map_horse, ftr_map_horse_patches)
+
+        assert loss_equal == 0
+        assert loss_different > loss_equal
+        # TODO: This doesn't work because styles aren't similar enough. A smarter selection
+        # of images is needed.
+        # assert loss_zebra_newcastle < loss_zebra_horse
+
+
+class TestSmoothnessReg:
+    def test(self):
+        uniform_img = torch.Tensor([[[1]*4]*4]*3)
+        diffy_x_img = torch.Tensor([[[1]*4, [0]*4]*2]*3)
+        diffy_y_img = torch.Tensor([[[1, 0]*2]*4]*3)
+        diffy_x_y_img = torch.Tensor([[[1, 0]*2, [0, 1]*2]*2]*3)
+        
+        assert smoothness_reg(uniform_img) == 0
+        assert smoothness_reg(diffy_x_img) == 3*3*4
+        assert smoothness_reg(diffy_y_img) == 3*4*3
+        assert smoothness_reg(diffy_x_y_img) == 2*3*4*3
 
 
 class TestOrthogonalRegularizer:
